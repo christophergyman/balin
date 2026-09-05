@@ -126,10 +126,10 @@ int main (void) {
                         running = 0;
                         break;
                     case SDLK_W:
-                        player.pos_y += 1;
+                        player.pos_y -= 1;
                         break;
                     case SDLK_S:
-                        player.pos_y -= 1;
+                        player.pos_y += 1;
                         break;
                     case SDLK_A:
                         player.pos_x -= 1;
@@ -140,6 +140,9 @@ int main (void) {
                 }
             }
         }
+
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_RenderClear(renderer);
       
         // grid lines
         if (DEBUG_GRID == true){
