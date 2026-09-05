@@ -1,4 +1,0 @@
-- [ ] Get a player square on screen
-- [ ] Draw grid on screen
-- [ ] Move player square on a grid
-- [ ] Lock player camera on square grid

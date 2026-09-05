@@ -1,0 +1,5 @@
+# Saturday 05/09/2026
+- [x] Get a player (square) on screen
+- [] Move player (square) on a grid
+- [] Draw grid on screen
+- [] Lock player camera on square grid
