@@ -1,1 +1,6 @@
-clang ./src/main.c -o ./output/main && ./output/main
+#!/bin/bash
+set -e
+
+cmake -S . -B build
+cmake --build build -j
+./output/balin
