@@ -19,26 +19,10 @@
 #define DEBUG_GRID true 
 #define WINDOW_W 800
 #define WINDOW_H 600 
-#define TILE_W 40
-#define TILE_H 40
 #define COLS 20
 #define ROWS 15
 
 // HELPER
-void draw_tile(SDL_Renderer *renderer, int c, int r, struct Color color) {
-    SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, 255);
-    SDL_FRect rect = {
-        .x = c * TILE_W,
-        .y = r * TILE_H,
-        .w = TILE_W,
-        .h = TILE_H
-    };
-    SDL_RenderFillRect(renderer, &rect);
-}
-
-bool check_collision(int pos_x, int pos_y, char direction){
-
-}
 
 // MAIN
 int main (void) {
@@ -102,12 +86,7 @@ int main (void) {
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
       
-        // grid lines
-        if (DEBUG_GRID == true){
-            SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255);
-            for (int i=0; i<=COLS; i++){SDL_RenderLine(renderer, i*TILE_W, 0, i*TILE_W, ROWS*TILE_H);}
-            for (int i=0; i<=ROWS; i++){SDL_RenderLine(renderer, 0 , i * TILE_H, COLS * TILE_W, i * TILE_H);}
-        }
+        draw_grid(renderer, COLS, ROWS);
 
         // draw world tiles
         for (int c=0; c<COLS; c++) {
