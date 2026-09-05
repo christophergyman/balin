@@ -9,6 +9,8 @@ add_subdirectory(vendor/SDL EXCLUDE_FROM_ALL)
 
 add_executable(balin
     src/main.c
+    src/colors.c
+    src/sdl.c
 )
 
 target_link_libraries(balin PRIVATE SDL3::SDL3)

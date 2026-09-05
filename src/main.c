@@ -11,8 +11,11 @@
 #include <string.h>
 #include <SDL3/SDL.h>
 
+#include "colors.h"
+#include "entity.h"
+#include "sdl.h"
 
-//      ---- Definitions ----
+// DEFINITIONS
 #define DEBUG_GRID true 
 #define WINDOW_W 800
 #define WINDOW_H 600 
@@ -21,37 +24,8 @@
 #define COLS 20
 #define ROWS 15
 
-//      ---- Types ----
-struct color{
-    int r, g, b;
-};
-
-struct color grass_green= {34, 139, 34};
-struct color sky_blue = {135, 206, 235};
-struct color dark_purple = {75, 0, 130};
-struct color grey = {90, 90, 90};
-
-enum Tiles {
-    AIR,
-    WALL,
-};
-
-struct entity_stats{
-    float strength;
-    float faith;
-    float speech;
-};
-
-struct entity{
-    char name[32];
-    int pos_x;
-    int pos_y;
-    struct entity_stats stats;
-};
-
-
-//      ---- HELPERS ----
-void draw_tile(SDL_Renderer *renderer, int c, int r, struct color color) {
+// HELPER
+void draw_tile(SDL_Renderer *renderer, int c, int r, struct Color color) {
     SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, 255);
     SDL_FRect rect = {
         .x = c * TILE_W,
@@ -62,37 +36,20 @@ void draw_tile(SDL_Renderer *renderer, int c, int r, struct color color) {
     SDL_RenderFillRect(renderer, &rect);
 }
 
+bool check_collision(int pos_x, int pos_y, char direction){
 
-//      ---- Main Program Loop ----
+}
 
+// MAIN
 int main (void) {
 
-    //      ----game colors----
+    // Window
+    SDL_Window *window = NULL;
+    SDL_Renderer *renderer = init_sdl(&window, WINDOW_W, WINDOW_H);
+    if (!renderer) return 1;
 
-    //      ----create window and renderer----
-    if(!SDL_Init(SDL_INIT_VIDEO)) {
-        SDL_Log("SDL_INIT failed: %s", SDL_GetError());
-        return 1;
-    }
-    SDL_Window *window = SDL_CreateWindow("Balin", WINDOW_W, WINDOW_H, 0);
-    if (!window){
-        SDL_Log("SDL_CreateWindow failed: %s", SDL_GetError());
-        SDL_Quit();
-        return 1;
-    }
-    SDL_Renderer *renderer = SDL_CreateRenderer(window, NULL);
-    if (!renderer){
-        SDL_Log("SDL_Renderer failed: %s", SDL_GetError());
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return 1;
-    }
-
-
-    //      ---- World Tiles----
-    struct entity entity_array[32];
+    // WORLD TILES
     int world[COLS][ROWS] = {0};
-
     for (int c=0; c<COLS; c++) {
         for(int r=0; r< ROWS; r++){
             // fill the world with air
@@ -102,7 +59,8 @@ int main (void) {
     world[2][2] = WALL;
 
     //      ---- Entities----
-    struct entity player = {
+    struct Entity entity_array[32];
+    struct Entity player = {
         .name = "balin",
         .pos_x = 1,
         .pos_y = 1,
@@ -172,10 +130,7 @@ int main (void) {
         // update render buffer
         SDL_RenderPresent(renderer);
 
-
-
     }
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
+    shutdown_sdl(window, renderer);
     return 0;
 }
