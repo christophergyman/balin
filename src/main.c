@@ -3,8 +3,10 @@
 
 #include "raylib.h"
 #include "raymath.h"
+#include "rlgl.h"
 
 #include "config.h"
+#include "editor.h"
 #include "entity.h"
 #include "entity_file.h"
 #include "player.h"
@@ -113,11 +115,27 @@ int main(void) {
     SetTargetFPS(120);
     DisableCursor(); // lock and hide the mouse for first person look
 
+    // Aim the camera along the player's look direction before the first frame
+    camera.position = (Vector3){player.position.x, player.position.y + PLAYER_EYE, player.position.z};
+    camera.target = Vector3Add(camera.position, PlayerLookDirection(&player));
+
     LoadTextureTable();
     Mesh wallQuad = BuildWallQuadMesh();
     Material wallMaterial = LoadMaterialDefault();
 
+    Editor editor = {0};
+
     while (!WindowShouldClose()) {
+        // TAB: toggle play mode and edit mode
+        if (IsKeyPressed(KEY_TAB)) {
+            editor.active = !editor.active;
+            if (editor.active) {
+                EnableCursor();
+            } else {
+                DisableCursor();
+            }
+        }
+
         // Q: save and quit
         if (IsKeyPressed(KEY_Q)) {
             playerEntity->position = player.position;
@@ -127,13 +145,21 @@ int main(void) {
             break;
         }
 
-        UpdatePlayer(&player, &camera, GetFrameTime(), &world);
+        bool dirty = false;
+        if (editor.active) {
+            UpdateEditor(&editor, &camera, &player, &world, entities, &entityCount, &dirty);
+        } else {
+            UpdatePlayer(&player, &camera, GetFrameTime(), &world);
+        }
 
         BeginDrawing();
         ClearBackground(BLACK);
 
         BeginMode3D(camera);
         DrawGrid(WORLD_COLS * 2, (float)TILE_SIZE);
+
+        // Wall faces render double-sided: no backface culling while drawing tiles
+        rlDisableBackfaceCulling();
 
         // One textured quad per tile face
         for (int row = 0; row < WORLD_COLS; row++) {
@@ -157,9 +183,14 @@ int main(void) {
             }
         }
 
+        rlEnableBackfaceCulling();
+
         EndMode3D();
 
+        DrawEditorOverlays(&editor, &world);
+
         DrawText("Balin 3D - WASD move, mouse look, space jump, Q quit", 10, 10, 20, WHITE);
+        DrawEditorPanel(&editor, &world, entities, &entityCount, &player, &dirty);
 
         EndDrawing();
     }

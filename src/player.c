@@ -21,6 +21,10 @@ static Vector3 LookDirection(float yaw, float pitch) {
     };
 }
 
+Vector3 PlayerLookDirection(const Player *player) {
+    return LookDirection(player->yaw, player->pitch);
+}
+
 void InitPlayer(Player *player, Vector3 startPosition) {
     player->position = startPosition;
     player->velocity = (Vector3){0};

@@ -22,5 +22,6 @@ void InitPlayer(Player *player, Vector3 startPosition);
 // Move a Vector2 toward a target at a limited rate (acceleration model)
 void MoveVector2Toward(Vector2 *vector, Vector2 target, float maxDelta);
 void UpdatePlayer(Player *player, Camera3D *camera, float dt, const World *world);
+Vector3 PlayerLookDirection(const Player *player);
 
 #endif

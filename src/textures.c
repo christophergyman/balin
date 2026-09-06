@@ -65,3 +65,7 @@ Texture2D *GetTexture(uint8_t id) {
     }
     return &textures[id];
 }
+
+int GetTextureCount(void) {
+    return textureCount;
+}

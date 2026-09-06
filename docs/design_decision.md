@@ -49,6 +49,10 @@ tiles, free object positions).
 ## Constraints and implications
 
 - Sprite textures need alpha transparency (.png).
+- Wall face quads render double-sided: backface culling is disabled while
+  drawing tiles, so one quad is visible from both directions. This is a
+  deliberate design choice (2026-09-06): tiles do not need opposite
+  face pairs to look solid.
 - Transparent sprites must draw back to front for correct blending.
 - Camera stays near horizontal; extreme pitch breaks the illusion.
 - Textures load once and are reused by name, so the level format

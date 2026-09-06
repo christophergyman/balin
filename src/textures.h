@@ -8,5 +8,6 @@
 void LoadTextureTable(void);
 void UnloadTextureTable(void);
 Texture2D *GetTexture(uint8_t id);
+int GetTextureCount(void);
 
 #endif

@@ -13,7 +13,10 @@ add_executable(balin
     src/entity_file.c
     src/paths.c
     src/textures.c
+    src/editor.c
 )
+
+target_include_directories(balin PRIVATE vendor/raygui/src)
 
 target_link_libraries(balin PRIVATE raylib)
 
