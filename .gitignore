@@ -3,3 +3,5 @@
 build/
 .cache
 output/*
+# Runtime save data
+output/data/

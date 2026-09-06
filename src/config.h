@@ -5,8 +5,13 @@
 #define UNIT_METERS 1.0f
 
 // Level layout
-#define TILE_SIZE 2.0f   // one grid tile = 2m x 2m of floor
-#define WALL_HEIGHT 2.5f // cave ceiling height
+#define TILE_SIZE 2.0f      // one grid tile = 2m x 2m of floor
+#define WALL_HEIGHT 2.5f    // cave wall height
+#define WORLD_COLS 20       // world grid is WORLD_COLS x WORLD_COLS tiles
+#define EDGE_THICKNESS 0.1f // collision thickness of wall edges, meters
+
+// Textures
+#define MAX_TEXTURES 64
 
 // Player
 #define PLAYER_EYE 1.6f    // camera height in meters
@@ -22,8 +27,8 @@
 #define MOUSE_SENS 0.1f     // degrees per pixel of mouse movement
 #define PITCH_LIMIT 85.0f   // max look up/down in degrees
 
-// Test world grid (level files come later)
-#define GRID_COLS 20
+// Entities
+#define MAX_ENTITIES 256
 
 // Window
 #define WINDOW_W 1280

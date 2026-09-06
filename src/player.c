@@ -3,6 +3,7 @@
 #include <math.h>
 
 #include "raymath.h"
+#include "world.h"
 
 static float Clampf(float value, float min, float max) {
     if (value < min) return min;
@@ -18,42 +19,6 @@ static Vector3 LookDirection(float yaw, float pitch) {
         sinf(pitch),
         -cosf(yaw) * cosPitch,
     };
-}
-
-// True when the player cylinder (radius, at x/z) overlaps a solid tile.
-// Tile (col, row) fills the cell [col*TILE_SIZE, (col+1)*TILE_SIZE] in x and z.
-static bool HitsSolidTile(const bool solid[GRID_COLS][GRID_COLS], float x, float z, float radius) {
-    int minCol = (int)floorf((x - radius) / TILE_SIZE);
-    int maxCol = (int)floorf((x + radius) / TILE_SIZE);
-    int minRow = (int)floorf((z - radius) / TILE_SIZE);
-    int maxRow = (int)floorf((z + radius) / TILE_SIZE);
-
-    for (int row = minRow; row <= maxRow; row++) {
-        for (int col = minCol; col <= maxCol; col++) {
-            if (col < 0 || col >= GRID_COLS || row < 0 || row >= GRID_COLS) {
-                continue;
-            }
-            if (!solid[row][col]) {
-                continue;
-            }
-
-            // Circle vs tile square: distance from center to closest point
-            float tileMinX = col * TILE_SIZE;
-            float tileMaxX = tileMinX + TILE_SIZE;
-            float tileMinZ = row * TILE_SIZE;
-            float tileMaxZ = tileMinZ + TILE_SIZE;
-
-            float closestX = Clampf(x, tileMinX, tileMaxX);
-            float closestZ = Clampf(z, tileMinZ, tileMaxZ);
-
-            float dx = x - closestX;
-            float dz = z - closestZ;
-            if (dx * dx + dz * dz < radius * radius) {
-                return true;
-            }
-        }
-    }
-    return false;
 }
 
 void InitPlayer(Player *player, Vector3 startPosition) {
@@ -77,7 +42,7 @@ void MoveVector2Toward(Vector2 *vector, Vector2 target, float maxDelta) {
     *vector = Vector2Add(*vector, delta);
 }
 
-void UpdatePlayer(Player *player, Camera3D *camera, float dt, const bool solid[GRID_COLS][GRID_COLS]) {
+void UpdatePlayer(Player *player, Camera3D *camera, float dt, const World *world) {
     // Mouse look
     Vector2 mouseDelta = GetMouseDelta();
     player->yaw += mouseDelta.x * MOUSE_SENS * DEG2RAD;
@@ -121,12 +86,12 @@ void UpdatePlayer(Player *player, Camera3D *camera, float dt, const bool solid[G
 
     // Integrate and collide, one axis at a time
     float newX = player->position.x + player->velocity.x * dt;
-    if (!HitsSolidTile(solid, newX, player->position.z, PLAYER_RADIUS)) {
+    if (!WorldCollidesCircle(world, newX, player->position.z, PLAYER_RADIUS)) {
         player->position.x = newX;
     }
 
     float newZ = player->position.z + player->velocity.z * dt;
-    if (!HitsSolidTile(solid, player->position.x, newZ, PLAYER_RADIUS)) {
+    if (!WorldCollidesCircle(world, player->position.x, newZ, PLAYER_RADIUS)) {
         player->position.z = newZ;
     }
 

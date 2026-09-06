@@ -1,26 +1,108 @@
+#include <stdio.h>
+#include <stdlib.h>
+
 #include "raylib.h"
+#include "raymath.h"
 
 #include "config.h"
+#include "entity.h"
+#include "entity_file.h"
 #include "player.h"
+#include "textures.h"
+#include "world.h"
+#include "world_file.h"
 
-// Tile (col, row) fills the cell [col*TILE_SIZE, (col+1)*TILE_SIZE] in x and z.
-static Vector3 TileCenter(int col, int row) {
-    return (Vector3){
-        (col + 0.5f) * TILE_SIZE,
-        0.0f,
-        (row + 0.5f) * TILE_SIZE,
-    };
+// One reusable textured quad: width TILE_SIZE, height WALL_HEIGHT, facing +Z
+static Mesh BuildWallQuadMesh(void) {
+    Mesh mesh = {0};
+    mesh.vertexCount = 4;
+    mesh.triangleCount = 2;
+
+    float halfWidth = TILE_SIZE / 2.0f;
+    mesh.vertices = MemAlloc(4 * 3 * sizeof(float));
+    mesh.vertices[0] = -halfWidth; mesh.vertices[1]  = 0.0f;        mesh.vertices[2]  = 0.0f;
+    mesh.vertices[3] = halfWidth;  mesh.vertices[4]  = 0.0f;        mesh.vertices[5]  = 0.0f;
+    mesh.vertices[6] = halfWidth;  mesh.vertices[7]  = WALL_HEIGHT; mesh.vertices[8]  = 0.0f;
+    mesh.vertices[9] = -halfWidth; mesh.vertices[10] = WALL_HEIGHT; mesh.vertices[11] = 0.0f;
+
+    mesh.texcoords = MemAlloc(4 * 2 * sizeof(float));
+    mesh.texcoords[0] = 0.0f; mesh.texcoords[1] = 1.0f; // bottom left
+    mesh.texcoords[2] = 1.0f; mesh.texcoords[3] = 1.0f; // bottom right
+    mesh.texcoords[4] = 1.0f; mesh.texcoords[5] = 0.0f; // top right
+    mesh.texcoords[6] = 0.0f; mesh.texcoords[7] = 0.0f; // top left
+
+    mesh.indices = MemAlloc(6 * sizeof(unsigned short));
+    mesh.indices[0] = 0; mesh.indices[1] = 1; mesh.indices[2] = 2;
+    mesh.indices[3] = 0; mesh.indices[4] = 2; mesh.indices[5] = 3;
+
+    UploadMesh(&mesh, false);
+    return mesh;
+}
+
+// Wall face quad for a tile edge: rotated to point outward, sitting on the edge
+static Matrix WallFaceMatrix(int col, int row, int dirBit) {
+    Vector3 center = TileCenter(col, row);
+    float minX = col * TILE_SIZE;
+    float minZ = row * TILE_SIZE;
+    float maxX = minX + TILE_SIZE;
+    float maxZ = minZ + TILE_SIZE;
+
+    Matrix rotate;
+    Vector3 position;
+    switch (dirBit) {
+    case DIR_N: // face points -Z
+        rotate = MatrixRotateY(PI);
+        position = (Vector3){center.x, 0.0f, minZ};
+        break;
+    case DIR_S: // face points +Z
+        rotate = MatrixIdentity();
+        position = (Vector3){center.x, 0.0f, maxZ};
+        break;
+    case DIR_E: // face points +X
+        rotate = MatrixRotateY(PI / 2.0f);
+        position = (Vector3){maxX, 0.0f, center.z};
+        break;
+    case DIR_W: // face points -X
+        rotate = MatrixRotateY(-PI / 2.0f);
+        position = (Vector3){minX, 0.0f, center.z};
+        break;
+    default:
+        return MatrixIdentity();
+    }
+    return MatrixMultiply(MatrixTranslate(position.x, position.y, position.z), rotate);
 }
 
 int main(void) {
-    // Test grid: floor is y=0 everywhere, this marks solid wall tiles
-    static bool solid[GRID_COLS][GRID_COLS] = {0};
-    solid[0][0] = true; // the demo wall tile
+    // World Layer
+    World world;
+    LoadWorldTiles(&world);
 
-    // Player starts three tiles down the corridor, looking toward the wall
+    // Entity Layer
+    Entity *entities = malloc(MAX_ENTITIES * sizeof(Entity));
+    if (entities == NULL) {
+        printf("Failed to allocate entity array\n");
+        return 1;
+    }
+    int entityCount = LoadEntities(entities);
+
+    // Find the player entity and give the body its saved position
+    Entity *playerEntity = NULL;
+    for (int i = 0; i < entityCount; i++) {
+        if (entities[i].kind == ENTITY_PLAYER) {
+            playerEntity = &entities[i];
+            break;
+        }
+    }
+    if (playerEntity == NULL) {
+        printf("No player entity in save, cannot start\n");
+        free(entities);
+        return 1;
+    }
+
     Player player;
-    InitPlayer(&player, (Vector3){2.5f * TILE_SIZE, 0.0f, 5.5f * TILE_SIZE});
+    InitPlayer(&player, playerEntity->position);
 
+    // Rendering resources, created after the window so the GPU context exists
     Camera3D camera = {
         .up = {0.0f, 1.0f, 0.0f},
         .fovy = 45.0f,
@@ -31,28 +113,49 @@ int main(void) {
     SetTargetFPS(120);
     DisableCursor(); // lock and hide the mouse for first person look
 
+    LoadTextureTable();
+    Mesh wallQuad = BuildWallQuadMesh();
+    Material wallMaterial = LoadMaterialDefault();
+
     while (!WindowShouldClose()) {
-        // Q: quit
+        // Q: save and quit
         if (IsKeyPressed(KEY_Q)) {
+            playerEntity->position = player.position;
+            SaveWorldTiles(&world);
+            SaveEntities(entities, entityCount);
+            printf("Saved and quitting\n");
             break;
         }
 
-        UpdatePlayer(&player, &camera, GetFrameTime(), solid);
+        UpdatePlayer(&player, &camera, GetFrameTime(), &world);
 
         BeginDrawing();
         ClearBackground(BLACK);
 
         BeginMode3D(camera);
-        DrawGrid(GRID_COLS * 2, (float)TILE_SIZE);
+        DrawGrid(WORLD_COLS * 2, (float)TILE_SIZE);
 
-        // Solid wall tile, full cell size
-        Vector3 wallCenter = TileCenter(0, 0);
-        DrawCube(
-            (Vector3){wallCenter.x, WALL_HEIGHT / 2.0f, wallCenter.z},
-            TILE_SIZE, WALL_HEIGHT, TILE_SIZE, GRAY);
-        DrawCubeWires(
-            (Vector3){wallCenter.x, WALL_HEIGHT / 2.0f, wallCenter.z},
-            TILE_SIZE, WALL_HEIGHT, TILE_SIZE, WHITE);
+        // One textured quad per tile face
+        for (int row = 0; row < WORLD_COLS; row++) {
+            for (int col = 0; col < WORLD_COLS; col++) {
+                const Tile *tile = &world.tiles[row][col];
+                if (tile->faces == 0) {
+                    continue;
+                }
+                Texture2D *texture = GetTexture(tile->textureId);
+                if (texture == NULL) {
+                    continue;
+                }
+                wallMaterial.maps[MATERIAL_MAP_ALBEDO].texture = *texture;
+
+                static const int dirBits[4] = {DIR_N, DIR_E, DIR_S, DIR_W};
+                for (int i = 0; i < 4; i++) {
+                    if (tile->faces & dirBits[i]) {
+                        DrawMesh(wallQuad, wallMaterial, WallFaceMatrix(col, row, dirBits[i]));
+                    }
+                }
+            }
+        }
 
         EndMode3D();
 
@@ -62,5 +165,9 @@ int main(void) {
     }
     CloseWindow();
 
+    UnloadMesh(wallQuad);
+    UnloadMaterial(wallMaterial);
+    UnloadTextureTable();
+    free(entities);
     return 0;
 }
