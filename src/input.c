@@ -1,6 +1,7 @@
 #include "input.h"
 
 #include <raylib.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "world.h"
@@ -26,5 +27,21 @@ void PlayerMovement(Entity *entityArray, int entityCount, WorldTile worldArray[R
         if (IsKeyPressed(KEY_D) && CanMoveTo(worldArray, pos->posX + 1, pos->posY)) {
             pos->posX += 1;
         }
+    }
+}
+
+// mouse position tracking and debug printing
+void TrackMouse(void) {
+    static Vector2 lastMouse = { -1.0f, -1.0f };
+
+    Vector2 mouse = GetMousePosition();
+
+    // Print only when the mouse moves so the terminal stays readable
+    if (mouse.x != lastMouse.x || mouse.y != lastMouse.y) {
+        int tileCol = (int)(mouse.x / TILE_SIZE);
+        int tileRow = (int)(mouse.y / TILE_SIZE);
+        printf("Mouse: pixels (x: %.1f, y: %.1f) tile (col: %d, row: %d)\n",
+               mouse.x, mouse.y, tileCol, tileRow);
+        lastMouse = mouse;
     }
 }

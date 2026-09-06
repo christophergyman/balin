@@ -5,5 +5,6 @@
 #include "config.h"
 
 void PlayerMovement(Entity *entityArray, int entityCount, WorldTile worldArray[ROWS][COLS]);
+void TrackMouse(void);
 
 #endif

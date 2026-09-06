@@ -29,6 +29,7 @@ int main(void) {
 
     while (!WindowShouldClose()) {
         PlayerMovement(entityArray, entityCount, worldArray);
+        TrackMouse();
 
         BeginDrawing();
         ClearBackground(BLACK);
