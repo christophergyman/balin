@@ -31,17 +31,21 @@ void PlayerMovement(Entity *entityArray, int entityCount, WorldTile worldArray[R
 }
 
 // mouse position tracking and debug printing
-void TrackMouse(void) {
+void TrackMouse(Vector2 *mousePos, Position *mouseTile) {
     static Vector2 lastMouse = { -1.0f, -1.0f };
 
     Vector2 mouse = GetMousePosition();
 
+    // Store latest mouse state for main
+    mousePos->x = mouse.x;
+    mousePos->y = mouse.y;
+    mouseTile->posX = (int)(mouse.x / TILE_SIZE);
+    mouseTile->posY = (int)(mouse.y / TILE_SIZE);
+
     // Print only when the mouse moves so the terminal stays readable
     if (mouse.x != lastMouse.x || mouse.y != lastMouse.y) {
-        int tileCol = (int)(mouse.x / TILE_SIZE);
-        int tileRow = (int)(mouse.y / TILE_SIZE);
         printf("Mouse: pixels (x: %.1f, y: %.1f) tile (col: %d, row: %d)\n",
-               mouse.x, mouse.y, tileCol, tileRow);
+               mouse.x, mouse.y, mouseTile->posX, mouseTile->posY);
         lastMouse = mouse;
     }
 }

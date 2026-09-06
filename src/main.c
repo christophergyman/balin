@@ -23,13 +23,17 @@ int main(void) {
     }
     int entityCount = InitEntityArray(entityArray);
 
+    // Mouse Layer
+    Vector2 mousePos = { -1.0f, -1.0f };
+    Position mouseTile = { .posX = -1, .posY = -1 };
+
     // Game loop
     InitWindow(WINDOW_W, WINDOW_H, "Balin");
     SetTargetFPS(120);
 
     while (!WindowShouldClose()) {
         PlayerMovement(entityArray, entityCount, worldArray);
-        TrackMouse();
+        TrackMouse(&mousePos, &mouseTile);
 
         BeginDrawing();
         ClearBackground(BLACK);
