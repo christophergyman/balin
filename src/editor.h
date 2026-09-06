@@ -10,6 +10,8 @@
 typedef struct Editor {
     bool active;
     bool showCollision;
+    bool freemove; // free-fly camera while editing, off = anchored to player
+    Vector3 camPos; // camera position while freemove is on
     bool hoverValid;
     int hoverCol;
     int hoverRow;
@@ -19,7 +21,7 @@ typedef struct Editor {
 
 // Runs the editor: picking, hotkeys, camera orbit. Only when editor->active.
 void UpdateEditor(Editor *editor, Camera3D *camera, Player *player, World *world,
-                  Entity *entities, int *entityCount, bool *dirty);
+                  Entity *entities, int *entityCount, bool *dirty, float dt);
 
 // 3D overlays: hover highlight and collision debug view. Call inside BeginMode3D.
 void DrawEditorOverlays(const Editor *editor, const World *world);

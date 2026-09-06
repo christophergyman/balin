@@ -134,6 +134,7 @@ int main(void) {
         if (IsKeyPressed(KEY_TAB)) {
             editor.active = !editor.active;
             if (editor.active) {
+                editor.camPos = camera.position; // seed freemove from where we are
                 EnableCursor();
             } else {
                 DisableCursor();
@@ -151,7 +152,7 @@ int main(void) {
 
         bool dirty = false;
         if (editor.active) {
-            UpdateEditor(&editor, &camera, &player, &world, entities, &entityCount, &dirty);
+            UpdateEditor(&editor, &camera, &player, &world, entities, &entityCount, &dirty, GetFrameTime());
         } else {
             UpdatePlayer(&player, &camera, GetFrameTime(), &world);
         }

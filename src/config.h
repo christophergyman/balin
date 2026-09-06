@@ -27,6 +27,11 @@
 #define MOUSE_SENS 0.1f     // degrees per pixel of mouse movement
 #define PITCH_LIMIT 85.0f   // max look up/down in degrees
 
+// Edit mode freemove camera
+#define FREEMOVE_SPEED 8.0f      // m/s fly speed
+#define FREEMOVE_FAST_MULT 3.0f  // Shift sprint multiplier
+#define FREEMOVE_VERT_SPEED 6.0f // Space up, Ctrl down
+
 // Entities
 #define MAX_ENTITIES 256
 

@@ -225,14 +225,55 @@ static void HandleEditorHotkeys(Editor *editor, World *world,
 
 // ---------------------------------------------------------------- update
 
+// Anchor the camera to the player's eyes, like play mode does
+static void SnapCameraToPlayer(Camera3D *camera, const Player *player) {
+    camera->position = (Vector3){
+        player->position.x,
+        player->position.y + PLAYER_EYE,
+        player->position.z,
+    };
+    camera->target = Vector3Add(camera->position, PlayerLookDirection(player));
+}
+
+// Fly the camera freely while editing: WASD relative to yaw, Space up,
+// Ctrl down, Shift sprint. No collision, the player body is untouched.
+static void UpdateFreemove(Editor *editor, Camera3D *camera, const Player *player, float dt) {
+    Vector3 forward = {sinf(player->yaw), 0.0f, -cosf(player->yaw)};
+    Vector3 right = {cosf(player->yaw), 0.0f, sinf(player->yaw)};
+
+    Vector3 wish = {0};
+    if (IsKeyDown(KEY_W)) wish = Vector3Add(wish, forward);
+    if (IsKeyDown(KEY_S)) wish = Vector3Subtract(wish, forward);
+    if (IsKeyDown(KEY_D)) wish = Vector3Add(wish, right);
+    if (IsKeyDown(KEY_A)) wish = Vector3Subtract(wish, right);
+    if (IsKeyDown(KEY_SPACE)) wish.y += 1.0f;
+    if (IsKeyDown(KEY_LEFT_CONTROL)) wish.y -= 1.0f;
+
+    if (Vector3LengthSqr(wish) > 0.0f) {
+        wish = Vector3Normalize(wish);
+        float speed = FREEMOVE_SPEED;
+        if (IsKeyDown(KEY_LEFT_SHIFT)) {
+            speed *= FREEMOVE_FAST_MULT;
+        }
+        editor->camPos = Vector3Add(editor->camPos, Vector3Scale(wish, speed * dt));
+    }
+    // Sync every frame so the camera always matches camPos, even with no input
+    camera->position = editor->camPos;
+    camera->target = Vector3Add(camera->position, PlayerLookDirection(player));
+}
+
 void UpdateEditor(Editor *editor, Camera3D *camera, Player *player, World *world,
-                  Entity *entities, int *entityCount, bool *dirty) {
+                  Entity *entities, int *entityCount, bool *dirty, float dt) {
     if (!editor->active) {
         return;
     }
 
     if (IsKeyPressed(KEY_V)) {
         editor->showCollision = !editor->showCollision;
+    }
+    if (IsKeyPressed(KEY_G)) {
+        editor->freemove = !editor->freemove;
+        printf("Freemove %s\n", editor->freemove ? "on" : "off");
     }
 
     // Left mouse drag paints faces on every new hovered edge
@@ -245,9 +286,18 @@ void UpdateEditor(Editor *editor, Camera3D *camera, Player *player, World *world
         Vector2 mouseDelta = GetMouseDelta();
         player->yaw += mouseDelta.x * MOUSE_SENS * DEG2RAD;
         player->pitch -= mouseDelta.y * MOUSE_SENS * DEG2RAD;
-        float pitchLimit = PITCH_LIMIT * DEG2RAD;
-        player->pitch = Clampf(player->pitch, -pitchLimit, pitchLimit);
+        if (!editor->freemove) {
+            float pitchLimit = PITCH_LIMIT * DEG2RAD;
+            player->pitch = Clampf(player->pitch, -pitchLimit, pitchLimit);
+        }
         camera->target = Vector3Add(camera->position, PlayerLookDirection(player));
+    }
+
+    if (editor->freemove) {
+        UpdateFreemove(editor, camera, player, dt);
+    } else {
+        // Re-anchor every frame so leaving freemove snaps back immediately
+        SnapCameraToPlayer(camera, player);
     }
 
     PickHover(camera, editor);
@@ -495,11 +545,16 @@ void DrawEditorPanel(Editor *editor, World *world, Entity *entities, int *entity
     y += 20;
     GuiLabel((Rectangle){x, y, w, 20}, "X clear  E place  R remove entity");
     y += 20;
-    GuiLabel((Rectangle){x, y, w, 20}, "V collision view");
+    GuiLabel((Rectangle){x, y, w, 20}, "V collision view  G freemove");
+    y += 20;
+    GuiLabel((Rectangle){x, y, w, 20}, "freemove: WASD fly  Space/Ctrl up/down");
     y += 26;
 
     GuiCheckBox((Rectangle){x, y, 20, 20}, "collision debug view", &editor->showCollision);
     y += 30;
+
+    GuiCheckBox((Rectangle){x, y, 20, 20}, "freemove camera", &editor->freemove);
+    y += 34;
 
     if (GuiButton((Rectangle){x, y, (w - 10) / 2, 26}, "SAVE")) {
         SaveWorldTiles(world);
