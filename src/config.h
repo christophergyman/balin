@@ -9,6 +9,6 @@
 #define COLS 60
 #define ROWS 34
 
-#define MAX_ENTITIES 5
+#define MAX_ENTITIES 256
 
 #endif

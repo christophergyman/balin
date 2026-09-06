@@ -8,5 +8,6 @@
 
 void PlayerMovement(Entity *entityArray, int entityCount, WorldTile worldArray[ROWS][COLS]);
 void TrackMouse(Vector2 *mousePos, Position *mouseTile);
+void HandleEditor(Entity *entityArray, int *entityCount, WorldTile worldArray[ROWS][COLS], Position mouseTile);
 
 #endif

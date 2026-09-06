@@ -8,6 +8,7 @@
 #include "config.h"
 #include "combat.h"
 #include "entity.h"
+#include "files.h"
 #include "input.h"
 #include "types.h"
 #include "world.h"
@@ -15,8 +16,8 @@
 // MAIN
 int main(void) {
     // World Layer
-    WorldTile worldArray[ROWS][COLS] = {0};
-    worldArray[0][1].tileType = WALL;
+    WorldTile worldArray[ROWS][COLS];
+    LoadWorld(worldArray);
 
     // Entity Layer
     Entity *entityArray = malloc(MAX_ENTITIES * sizeof(Entity));
@@ -24,7 +25,7 @@ int main(void) {
         printf("Failed to allocate entity array\n");
         return 1;
     }
-    int entityCount = InitEntityArray(entityArray);
+    int entityCount = LoadEntities(entityArray);
 
     // Mouse Layer
     Vector2 mousePos = { -1.0f, -1.0f };
@@ -39,8 +40,17 @@ int main(void) {
     SetTargetFPS(120);
 
     while (!WindowShouldClose()) {
+        // Q: save both files and quit
+        if (IsKeyPressed(KEY_Q)) {
+            SaveWorld(worldArray);
+            SaveEntities(entityArray, entityCount);
+            printf("Saved and quitting\n");
+            break;
+        }
+
         PlayerMovement(entityArray, entityCount, worldArray);
         TrackMouse(&mousePos, &mouseTile);
+        HandleEditor(entityArray, &entityCount, worldArray, mouseTile);
         HandleCombat(entityArray, entityCount, mouseTile);
 
         // HUD: start the message when the enemy dies this frame

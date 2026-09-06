@@ -11,6 +11,7 @@ add_executable(balin
     src/entity.c
     src/input.c
     src/combat.c
+    src/files.c
 )
 
 target_link_libraries(balin PRIVATE raylib)
