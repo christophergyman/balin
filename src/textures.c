@@ -12,10 +12,21 @@ static Texture2D textures[MAX_TEXTURES];
 static int textureCount = 0;
 
 // Procedural placeholder so the game runs with zero art assets
-static Texture2D LoadPlaceholderTexture(void) {
+static Texture2D LoadPlaceholderWallTexture(void) {
     Image image = GenImageColor(64, 64, GRAY);
     ImageDrawRectangle(&image, 4, 4, 56, 56, LIGHTGRAY);
     ImageDrawRectangle(&image, 12, 12, 40, 40, GRAY);
+    Texture2D texture = LoadTextureFromImage(image);
+    UnloadImage(image);
+    return texture;
+}
+
+static Texture2D LoadPlaceholderCrateTexture(void) {
+    Image image = GenImageColor(64, 64, BROWN);
+    ImageDrawRectangle(&image, 2, 2, 60, 60, DARKBROWN);
+    ImageDrawRectangle(&image, 6, 6, 52, 52, BROWN);
+    ImageDrawRectangle(&image, 6, 28, 52, 8, DARKBROWN);
+    ImageDrawRectangle(&image, 28, 6, 8, 52, DARKBROWN);
     Texture2D texture = LoadTextureFromImage(image);
     UnloadImage(image);
     return texture;
@@ -46,9 +57,10 @@ void LoadTextureTable(void) {
     }
 
     if (textureCount == 0) {
-        textures[0] = LoadPlaceholderTexture();
-        textureCount = 1;
-        printf("No textures in %s, using generated placeholder\n", dirPath);
+        textures[0] = LoadPlaceholderWallTexture();
+        textures[1] = LoadPlaceholderCrateTexture();
+        textureCount = 2;
+        printf("No textures in %s, using generated placeholders (0 wall, 1 crate)\n", dirPath);
     }
 }
 

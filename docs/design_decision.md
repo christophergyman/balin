@@ -58,3 +58,20 @@ tiles, free object positions).
 - Textures load once and are reused by name, so the level format
   references sprites by name rather than embedding images.
 - First-person or low-angle third-person camera fits this style best.
+
+## DrawMesh transform composition order
+
+Date: 2026-09-06
+
+With raylib 6 `DrawMesh`, compose a transform as
+`MatrixMultiply(rotation, translation)`. That means "rotate the quad
+around its own center, then place it at the position."
+
+The reverse order, `MatrixMultiply(translation, rotation)`, rotates the
+already-placed quad around the world origin. Every face with a non-identity
+rotation lands mirrored through (0, 0), far from its tile. Identity-rotation
+faces look correct either way, which hides the bug in translate-only tests.
+
+Proven with an isolated framebuffer test (one red quad, known transform,
+pixel bounding box read back), not from raymath docs. The rule lives in a
+comment at `WallFaceMatrix` in `src/main.c`.

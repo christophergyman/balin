@@ -71,7 +71,11 @@ static Matrix WallFaceMatrix(int col, int row, int dirBit) {
     default:
         return MatrixIdentity();
     }
-    return MatrixMultiply(MatrixTranslate(position.x, position.y, position.z), rotate);
+    // NOTE: DrawMesh composes transforms so that Multiply(rotation, translation)
+    // means "rotate the quad around its own center, then place it at the position."
+    // The reverse order rotates the already-placed quad around the world origin,
+    // which throws faces to mirrored positions (verified by framebuffer test).
+    return MatrixMultiply(rotate, MatrixTranslate(position.x, position.y, position.z));
 }
 
 int main(void) {
