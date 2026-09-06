@@ -39,6 +39,10 @@ int InitEntityArray(Entity *entityArray) {
 
 void DrawWorldEntities(Entity *entityArray, int entityCount) {
     for (int i = 0; i < entityCount; i++) {
+        // Dead entities are not drawn
+        if (entityArray[i].entityStats.health <= 0) {
+            continue;
+        }
         // strcmp returns 0 on match, so compare against 0
         if(strcmp(entityArray[i].name, "player") == 0){
             DrawRectangle(

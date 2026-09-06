@@ -4,6 +4,7 @@
 #include "raylib.h"
 
 #include "config.h"
+#include "combat.h"
 #include "entity.h"
 #include "input.h"
 #include "types.h"
@@ -34,6 +35,7 @@ int main(void) {
     while (!WindowShouldClose()) {
         PlayerMovement(entityArray, entityCount, worldArray);
         TrackMouse(&mousePos, &mouseTile);
+        HandleCombat(entityArray, entityCount, mouseTile);
 
         BeginDrawing();
         ClearBackground(BLACK);
