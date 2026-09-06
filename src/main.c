@@ -10,15 +10,37 @@
 #define COLS 60
 #define ROWS 34
 
+#define MAX_ENTITIES 5
+
 
 // STRUCTS
 enum TileType{
     AIR,
     WALL,
 };
-struct WorldTile{
+
+typedef struct WorldTile{
     enum TileType tileType;
-};
+} WorldTile;
+
+typedef struct Position {
+    int posX;
+    int posY;
+} Position;
+
+typedef struct EntityStats{
+    int health;
+    int strength;
+    int faith;
+    int money;
+} EntityStats;
+
+typedef struct Entity{
+    char* name;
+    struct Position positon;
+    struct EntityStats entityStats;
+} Entity;
+
 
 // HELPER
 void DebugGrid(){
@@ -33,7 +55,7 @@ void DebugGrid(){
         }
 }
 
-void DrawWorldTiles(struct WorldTile worldArray[ROWS][COLS]){
+void DrawWorldTiles(WorldTile worldArray[ROWS][COLS]){
     for(int r=0; r < ROWS; r++){
         for(int c=0; c < ROWS; c++){
             if(worldArray[r][c].tileType == WALL){
@@ -43,11 +65,70 @@ void DrawWorldTiles(struct WorldTile worldArray[ROWS][COLS]){
     }
 }
 
+void InitEntityArray(Entity * entityArray[MAX_ENTITIES], int entityCount){
+    Entity player = {
+        .name = "player",
+        .positon = {
+            .posX = 2,
+            .posY = 2,
+        },
+        .entityStats = {
+            .health = 100,
+            .strength = 99,
+            .faith = 99,
+            .money = 999
+        }
+    };
+    entityArray[entityCount++] = &player;
+
+    Entity enemy = {
+        .name = "enemy",
+        .positon = {
+            .posX = 2,
+            .posY = 2,
+        },
+        .entityStats = {
+            .health = 100,
+            .strength = 99,
+            .faith = 99,
+            .money = 999
+        }
+    };
+    entityArray[entityCount++] = &enemy;
+}
+
+void DrawWorldEntities(Entity * entityArray){
+    for(int i=0; i<MAX_ENTITIES; i++){
+        DrawRectangle(
+            entityArray[i].positon.posX,
+            entityArray[i].positon.posY,
+            TILE_SIZE,
+            TILE_SIZE,
+            PURPLE
+        );
+    }
+}
+
+// player movement
+void PlayerMovement(){
+    if(IsKeyPressed(KEY_W)){
+    }
+}
+
+
 // MAIN
 int main(void){
-    struct WorldTile worldArray[ROWS][COLS] = {0};
+    // World Layer
+    WorldTile worldArray[ROWS][COLS] = {0};
     worldArray[0][1].tileType = WALL;
 
+    // Entity Layer
+    Entity * entityArray[MAX_ENTITIES] = {0};
+    int entityCount = 0;
+    InitEntityArray(entityArray, entityCount);
+
+
+    // Game loop
     InitWindow(WINDOW_W, WINDOW_H, "Balin");
     SetTargetFPS(120);
 
@@ -56,6 +137,7 @@ int main(void){
         ClearBackground(BLACK);
 
         DrawWorldTiles(worldArray);
+        DrawWorldEntities(entityArray);
         DebugGrid();
 
         EndDrawing();
