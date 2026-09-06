@@ -1,6 +1,7 @@
 #include "entity.h"
 
 #include <raylib.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "config.h"
@@ -35,6 +36,30 @@ int InitEntityArray(Entity *entityArray) {
     };
 
     return 2;
+}
+
+// Simple HUD: player health top left, kill message centered when the timer runs
+void DrawHud(Entity *entityArray, int entityCount, int killMessageTimer) {
+    Entity *player = NULL;
+    for (int i = 0; i < entityCount; i++) {
+        if (entityArray[i].name == NULL || strcmp(entityArray[i].name, "player") != 0) {
+            continue;
+        }
+        player = &entityArray[i];
+        break;
+    }
+
+    if (player != NULL) {
+        char healthText[32];
+        sprintf(healthText, "HP: %d", player->entityStats.health);
+        DrawText(healthText, 10, 10, 20, WHITE);
+    }
+
+    if (killMessageTimer > 0) {
+        const char *message = "Enemy slain";
+        int textWidth = MeasureText(message, 24);
+        DrawText(message, (WINDOW_W - textWidth) / 2, 40, 24, GREEN);
+    }
 }
 
 void DrawWorldEntities(Entity *entityArray, int entityCount) {

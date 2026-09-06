@@ -5,5 +5,6 @@
 
 int InitEntityArray(Entity *entityArray);
 void DrawWorldEntities(Entity *entityArray, int entityCount);
+void DrawHud(Entity *entityArray, int entityCount, int killMessageTimer);
 
 #endif
