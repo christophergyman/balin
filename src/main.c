@@ -1,87 +1,38 @@
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
 #include "raylib.h"
 
-#include "config.h"
-#include "combat.h"
-#include "entity.h"
-#include "files.h"
-#include "input.h"
-#include "types.h"
-#include "world.h"
+#define WINDOW_W 1280
+#define WINDOW_H 720
 
-// MAIN
 int main(void) {
-    // World Layer
-    WorldTile worldArray[ROWS][COLS];
-    LoadWorld(worldArray);
+    // Camera
+    Camera3D camera = {
+        .position = {10.0f, 10.0f, 10.0f},
+        .target = {0.0f, 0.0f, 0.0f},
+        .up = {0.0f, 1.0f, 0.0f},
+        .fovy = 45.0f,
+        .projection = CAMERA_PERSPECTIVE,
+    };
 
-    // Entity Layer
-    Entity *entityArray = malloc(MAX_ENTITIES * sizeof(Entity));
-    if (entityArray == NULL) {
-        printf("Failed to allocate entity array\n");
-        return 1;
-    }
-    int entityCount = LoadEntities(entityArray);
-
-    // Mouse Layer
-    Vector2 mousePos = { -1.0f, -1.0f };
-    Position mouseTile = { .posX = -1, .posY = -1 };
-
-    // HUD Layer
-    int killMessageTimer = 0;
-    bool enemyWasAlive = true;
-
-    // Game loop
     InitWindow(WINDOW_W, WINDOW_H, "Balin");
     SetTargetFPS(120);
 
     while (!WindowShouldClose()) {
-        // Q: save both files and quit
-        if (IsKeyPressed(KEY_Q)) {
-            SaveWorld(worldArray);
-            SaveEntities(entityArray, entityCount);
-            printf("Saved and quitting\n");
-            break;
-        }
-
-        PlayerMovement(entityArray, entityCount, worldArray);
-        TrackMouse(&mousePos, &mouseTile);
-        HandleEditor(entityArray, &entityCount, worldArray, mouseTile);
-        HandleCombat(entityArray, entityCount, mouseTile);
-
-        // HUD: start the message when the enemy dies this frame
-        bool enemyAlive = false;
-        for (int i = 0; i < entityCount; i++) {
-            if (entityArray[i].name != NULL && strcmp(entityArray[i].name, "enemy") == 0 &&
-                entityArray[i].entityStats.health > 0) {
-                enemyAlive = true;
-                break;
-            }
-        }
-        if (enemyWasAlive && !enemyAlive) {
-            killMessageTimer = 120; // 1 second at 120 fps
-        }
-        enemyWasAlive = enemyAlive;
-        if (killMessageTimer > 0) {
-            killMessageTimer--;
-        }
+        UpdateCamera(&camera, CAMERA_ORBITAL);
 
         BeginDrawing();
         ClearBackground(BLACK);
 
-        DrawWorldTiles(worldArray);
-        DrawWorldEntities(entityArray, entityCount);
-        DrawHud(entityArray, entityCount, killMessageTimer);
-        DebugGrid();
+        BeginMode3D(camera);
+        DrawGrid(20, 1.0f);
+        DrawCube((Vector3){0.0f, 0.5f, 0.0f}, 1.0f, 1.0f, 1.0f, BLUE);
+        DrawCubeWires((Vector3){0.0f, 0.5f, 0.0f}, 1.0f, 1.0f, 1.0f, WHITE);
+        EndMode3D();
+
+        DrawText("Balin 3D", 10, 10, 20, WHITE);
 
         EndDrawing();
     }
     CloseWindow();
 
-    free(entityArray);
     return 0;
 }

@@ -1,5 +1,5 @@
-# Saturday 05/09/2026
-- [x] Get a player (square) on screen
-- [] Move player (square) on a grid
-- [] Draw grid on screen
-- [] Lock player camera on square grid
+# Sunday 06/09/2026
+- [x] Basic 3D window with raylib (grid + cube + orbit camera)
+- [] Move the player cube with WASD
+- [] Mouse look (first person camera)
+- [] Jump / gravity
