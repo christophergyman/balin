@@ -7,6 +7,9 @@ add_subdirectory(vendor/raylib)
 
 add_executable(balin
     src/main.c
+    src/world.c
+    src/entity.c
+    src/input.c
 )
 
 target_link_libraries(balin PRIVATE raylib)
