@@ -296,6 +296,48 @@ static void DrawEdgeHighlight(const Editor *editor, Color color) {
     }
 }
 
+// Red direction arrows: one per face bit, pointing from the tile center
+// out toward the edge that face sits on
+static void DrawFaceDirectionArrows(const World *world, int col, int row, float y, Color color) {
+    const Tile *tile = &world->tiles[row][col];
+    if (tile->faces == 0) {
+        return;
+    }
+
+    Vector3 center = TileCenter(col, row);
+    center.y = y;
+    float minX = col * TILE_SIZE;
+    float minZ = row * TILE_SIZE;
+    float maxX = minX + TILE_SIZE;
+    float maxZ = minZ + TILE_SIZE;
+    float head = 0.25f; // arrowhead size
+
+    if (tile->faces & DIR_N) {
+        Vector3 tip = {center.x, y, minZ};
+        DrawLine3D(center, tip, color);
+        DrawLine3D(tip, (Vector3){center.x - head, y, minZ + head}, color);
+        DrawLine3D(tip, (Vector3){center.x + head, y, minZ + head}, color);
+    }
+    if (tile->faces & DIR_S) {
+        Vector3 tip = {center.x, y, maxZ};
+        DrawLine3D(center, tip, color);
+        DrawLine3D(tip, (Vector3){center.x - head, y, maxZ - head}, color);
+        DrawLine3D(tip, (Vector3){center.x + head, y, maxZ - head}, color);
+    }
+    if (tile->faces & DIR_E) {
+        Vector3 tip = {maxX, y, center.z};
+        DrawLine3D(center, tip, color);
+        DrawLine3D(tip, (Vector3){maxX - head, y, center.z - head}, color);
+        DrawLine3D(tip, (Vector3){maxX - head, y, center.z + head}, color);
+    }
+    if (tile->faces & DIR_W) {
+        Vector3 tip = {minX, y, center.z};
+        DrawLine3D(center, tip, color);
+        DrawLine3D(tip, (Vector3){minX + head, y, center.z - head}, color);
+        DrawLine3D(tip, (Vector3){minX + head, y, center.z + head}, color);
+    }
+}
+
 void DrawEditorOverlays(const Editor *editor, const World *world) {
     if (!editor->active) {
         return;
@@ -326,8 +368,21 @@ void DrawEditorOverlays(const Editor *editor, const World *world) {
     }
 
     if (editor->hoverValid) {
+        // Bright red arrows on the hovered tile show its face directions
+        DrawFaceDirectionArrows(world, editor->hoverCol, editor->hoverRow, 0.3f, RED);
         DrawCellHighlight(editor, YELLOW);
         DrawEdgeHighlight(editor, ORANGE);
+    }
+
+    // Dim arrows on every faced tile while the debug view is open
+    if (editor->showCollision) {
+        for (int row = 0; row < WORLD_COLS; row++) {
+            for (int col = 0; col < WORLD_COLS; col++) {
+                if (world->tiles[row][col].faces != 0) {
+                    DrawFaceDirectionArrows(world, col, row, 0.2f, (Color){200, 60, 60, 180});
+                }
+            }
+        }
     }
 }
 

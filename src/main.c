@@ -185,9 +185,8 @@ int main(void) {
 
         rlEnableBackfaceCulling();
 
-        EndMode3D();
-
         DrawEditorOverlays(&editor, &world);
+        EndMode3D();
 
         DrawText("Balin 3D - WASD move, mouse look, space jump, Q quit", 10, 10, 20, WHITE);
         DrawEditorPanel(&editor, &world, entities, &entityCount, &player, &dirty);
