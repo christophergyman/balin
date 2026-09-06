@@ -10,6 +10,7 @@ add_executable(balin
     src/world.c
     src/entity.c
     src/input.c
+    src/combat.c
 )
 
 target_link_libraries(balin PRIVATE raylib)
