@@ -130,6 +130,17 @@ Four sections, about 5 minutes each, on a linear climb with side pockets.
 - Side pockets hold food, small shrines, and story props.
 - The player always climbs upward. Level geometry and camera reinforce rising.
 
+### Tile and movement model
+
+- The cave is built on a 32x32 tile grid. Every tile is 32x32 pixels at the base resolution.
+- Every entity sprite is also 32x32 pixels, so one entity matches one tile footprint when placed.
+- Entities move freely in continuous space. Movement is not grid-locked, not turn-based, and not restricted to tile centers or cardinal directions.
+- Walls block movement through tile collision. Entities never snap to the grid while moving.
+- Facing is free and continuous, supporting movement in any direction.
+- The editor snaps placement to the tile grid. Runtime movement does not snap.
+- Collision bodies are smaller than the sprite footprint, tuned so Balin and enemies do not snag on tile corners.
+- The camera is free, not tile-locked. It follows smoothly.
+
 ## 7. HUD and screens
 
 - **HUD only.** HP bar, faith bar with the lost maximum shown as a dark notch, and a Smite cooldown icon.
@@ -142,7 +153,7 @@ Four sections, about 5 minutes each, on a linear climb with side pockets.
 
 ## 8. Art direction
 
-- 32x32 pixel art, gothic style, generated through the existing AI tileset pipeline and curated by hand.
+- 32x32 pixel art on the shared tile grid from section 6. Gothic style, generated through the existing AI tileset pipeline and curated by hand.
 - **Palette:** dark desaturated stone and earth, warm flame accents for faith, shrines, and Smite, sickly pale accents for the undead.
 - **Symbol language:** faith is flame. Shrines are braziers, the glow is fire, Smite ignites enemies. Dark idols and snuffed flames represent lost faith.
 - **Acceptance rules for generated assets:**
@@ -309,3 +320,4 @@ All values are starting points for playtests, not final numbers.
 - 2026-09-11: Scope additions locked. 4x4 grid bag in scope, dev-only level editor in scope.
 - 2026-09-11: Presentation locked. 32x32 gothic AI-generated pixel art, flame as the faith symbol, ambient drone plus SFX, HUD only, no text until the ending.
 - 2026-09-11: Success criteria locked. 3 of 5 testers finish, the faith mechanic lands unprompted, performance bar met.
+- 2026-09-11: Grid model locked. The world is a 32x32 tile grid, entity sprites are 32x32, and entities move freely in continuous space. Only editor placement snaps to the grid.
