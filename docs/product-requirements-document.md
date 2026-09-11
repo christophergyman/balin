@@ -8,7 +8,7 @@
 | Scope | Single-player 2D demo, one run of about 20 minutes |
 | Doc type | Product decisions only. No architecture, no code |
 
-This is a living document. Update it when decisions change. See `docs/game-design-doc-guide.md` for the doc practices behind this format.
+This is a living document. Update it when decisions change. See `docs/research/game-design-doc-guide.md` for the doc practices behind this format.
 
 ## 1. Summary
 

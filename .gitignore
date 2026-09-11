@@ -5,3 +5,4 @@ build/
 output/*
 # Runtime save data
 output/data/
+temp/*

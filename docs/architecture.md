@@ -6,7 +6,7 @@
 | Owner | cman |
 | Date | 2026-09-11 |
 | Scope | Engine and code architecture for the Balin demo |
-| Related | `docs/prd-balin-demo.md` for product decisions |
+| Related | `docs/product-requirements-document.md` for product decisions |
 
 This document adapts general ADR practice to a solo game project. There is no strong, game-specific ADR convention in the sources, so the game-specific sections (frame budget, editor workflow, playtest confirmation) are a reasoned adaptation, not an established standard.
 
@@ -79,7 +79,7 @@ src/
 tests/
   test_main.c        pure-logic tests
 docs/
-  prd-balin-demo.md
+  product-requirements-document.md
   architecture.md
 ```
 
