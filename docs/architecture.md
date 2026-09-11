@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Draft v1.0 |
+| Status | Draft v1.1 |
 | Owner | cman |
 | Date | 2026-09-11 |
 | Scope | Engine and code architecture for the Balin demo |
@@ -71,6 +71,7 @@ assets/
   manifest.txt       sheets, tiles, animations, items
   levels/            section files, versioned text
   tuning.txt         reloadable tuning values
+  log.cfg            reloadable log thresholds
 src/
   main.c
   engine/            time, input, render, audio, assets, arena, log, math
@@ -125,6 +126,7 @@ docs/
 | ADR-017 | Explicit ordered system list | accepted | 2026-09-11 |
 | ADR-018 | Assets in repo, copied next to the executable for release | accepted | 2026-09-11 |
 | ADR-019 | Fail fast on malformed data | accepted | 2026-09-11 |
+| ADR-020 | Structured logfmt events, a flight recorder ring, and bug bundles | accepted | 2026-09-11 |
 
 ## 4. Decision records
 
@@ -613,6 +615,7 @@ Manifests and images reload when their modification times change in dev builds. 
 
 - Status: accepted
 - Date: 2026-09-11
+- Superseded by: ADR-020 for the logging part only. Tests and overlay stay here.
 
 **Context.** Game feel needs human playtests, but parsing, arenas, ECS, and collision math are cheap to verify automatically. Performance and AI state need visibility beyond printf.
 
@@ -776,6 +779,50 @@ Manifests and images reload when their modification times change in dev builds. 
 
 **Confirmation.** Malformed-file tests call the parsers directly and assert the error result. A manual test corrupts one line of each format.
 
+### ADR-020: Structured logfmt events, a flight recorder ring, and bug bundles
+
+- Status: accepted
+- Date: 2026-09-11
+
+**Context.** ADR-015 left logging to raylib TraceLog wrappers. That gives no categories, no thresholds, no history, and nothing to attach to a bug report. The flight recorder, the debug overlay, and shared demo builds all need one event shape. Rare state bugs are easiest to fix from the seconds before they happen.
+
+**Decision drivers**
+
+- One shape for console, file, ring, overlay, and bug bundles.
+- No formatting cost when a level is off.
+- No allocation in the log path; all buffers are static.
+- Bounded memory for the flight recorder.
+- Config changes apply without a rebuild.
+
+**Considered options**
+
+1. Structured logfmt events with a ring and bundles. Good: uniform, greppable, tool-friendly, bundle-ready. Bad: a custom logger to write and test.
+2. raylib TraceLog wrappers. Good: no new code. Bad: no categories, thresholds, or history.
+3. A third-party logging library. Good: features out of the box. Bad: a new dependency and no bundle concept.
+
+**Decision outcome.** We will replace the logging part of ADR-015 with a structured logger:
+
+- **Event shape.** One event per line in logfmt order: `ts`, `level`, `cat`, `tick`, `run`, `msg`, then caller key=value pairs. Example: `ts=2026-09-11T17:46:51.123Z level=info cat=game tick=1842 run=1 msg="section loaded" section=0`. Values with spaces or special characters are quoted and escaped.
+- **Levels.** Six levels: `trace`, `debug`, `info`, `warn`, `error`, `fatal`. Macros `LOGT`, `LOGD`, `LOGI`, `LOGW`, and `LOGE` take a category and a format string. `ASSERT` logs `fatal` and exits non-zero, by ADR-019.
+- **Categories.** A fixed enum: `boot`, `engine`, `input`, `render`, `audio`, `assets`, `game`, `ai`, `combat`, `editor`.
+- **Thresholds.** `assets/log.cfg` sets a default threshold and one threshold per category. It is re-read when its modification time changes, the same rule as tuning in ADR-008. A missing file or malformed line is fatal; the message goes to stderr because the logger is not configured yet.
+- **Sinks.** The console writes enabled lines; `warn` and above go to stderr. A session log is written under `output/logs/` and flushed with a per-frame byte budget, so a burst cannot stall a frame.
+- **Formatting.** One static buffer formats a line at a time. The call site checks the threshold first, so a disabled level does no formatting. Nothing allocates, ever.
+- **Flight recorder.** A fixed ring keeps the last 2048 events at `trace` detail, independent of thresholds. Each slot holds up to 256 bytes. The ring is a static array.
+- **Bug bundle.** F9 writes a bundle folder under `output/bugs/<timestamp>/` with `session.log`, `ring.log`, `state.txt`, and `env.txt`. A fatal event writes the same bundle before exit in every build.
+- **Snapshot.** `state.txt` starts with ECS counts, arena bytes, tick, run, and player and AI state. Later systems append sections of their own.
+
+**Consequences**
+
+- Positive: one event shape feeds every consumer, and a bundle is one folder to share.
+- Positive: noisy categories drop to `warn` while the game runs, and the ring still keeps full detail.
+- Positive: bounded memory and no allocation keep the frame budget safe.
+- Negative: a custom logger needs tests that TraceLog would not need.
+- Negative: a malformed `log.cfg` stops the game, by ADR-019.
+- Negative: the ring reserves 2048 fixed slots even in a quiet session.
+
+**Confirmation.** Tests for the logfmt shape and for a malformed `log.cfg`. A test that a disabled level does no formatting. A manual check that a threshold edit applies while the game runs and that F9 writes a complete bundle. ADR-015 carries a supersession note.
+
 ## 5. Decision backlog
 
 Items not yet decided or deliberately deferred. Each can become an ADR when it is promoted.
@@ -822,3 +869,4 @@ Items not yet decided or deliberately deferred. Each can become an ADR when it i
 | Date | Change |
 |---|---|
 | 2026-09-11 | v1.0 draft. ADR-001 through ADR-019 recorded from the architecture interview. |
+| 2026-09-11 | v1.1. ADR-020 recorded. Logging part of ADR-015 superseded. |
