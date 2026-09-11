@@ -1,5 +1,0 @@
-# Sunday 06/09/2026
-- [x] Basic 3D window with raylib (grid + cube + orbit camera)
-- [] Move the player cube with WASD
-- [] Mouse look (first person camera)
-- [] Jump / gravity

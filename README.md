@@ -1,5 +1,24 @@
-# Balin Game
+# Balin
 
-Welcome to this repo which holds the game code for Balin. It is a video game written in C using raylib using as little dependancies as possible. 
+A minimal 2D raylib starter written in C.
 
-As for the game, you are Balin a dward stuck in a cave after trying to find some pi. You need to escape and all you have as a axe on your belt and courage. Escape the dungeon with a good story.
+The program opens a 1280x720 window and draws a white square in the center.
+
+## Build and run
+
+```sh
+./run.sh
+```
+
+Or manually:
+
+```sh
+cmake -S . -B build
+cmake --build build -j
+./output/balin
+```
+
+## Layout
+
+- `src/main.c`: the whole program.
+- `vendor/raylib`: vendored raylib.

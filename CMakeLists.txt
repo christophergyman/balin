@@ -1,22 +1,12 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(Balin VERSION 0.2.0 LANGUAGES C)
+project(Balin VERSION 0.1.0 LANGUAGES C)
 
 add_subdirectory(vendor/raylib)
 
-
 add_executable(balin
     src/main.c
-    src/player.c
-    src/world.c
-    src/world_file.c
-    src/entity_file.c
-    src/paths.c
-    src/textures.c
-    src/editor.c
 )
-
-target_include_directories(balin PRIVATE vendor/raygui/src)
 
 target_link_libraries(balin PRIVATE raylib)
 
