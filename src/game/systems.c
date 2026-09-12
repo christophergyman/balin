@@ -43,7 +43,7 @@ static void SystemHealth(void) {
 }
 
 static void SystemCleanup(void) {
-    // 10. Lifetime cleanup: despawn, corpses, pickups consumed. TODO(BAL-11)
+    // 10. Lifetime cleanup: despawn, corpses, pickups consumed. TODO(BAL-21)
 }
 
 static void SystemAudio(void) {
@@ -67,4 +67,8 @@ void GameTick(void) {
     SystemCleanup();        // 10
     SystemAudio();          // 11
     SystemLightGather();    // 12
+
+    // Deferred destroys apply once the system list has run, per ADR-005.
+    // Queries skip dead entities before this, so no system can touch them.
+    EcsFlush(GameEcs());
 }

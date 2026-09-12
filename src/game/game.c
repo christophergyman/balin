@@ -12,7 +12,11 @@
 static float probeX;
 static float probePreviousX;
 
+static EcsWorld ecsWorld;
+
 void GameInit(void) {
+    EcsInit(&ecsWorld);
+
     probeX = 0.0f;
     probePreviousX = probeX;
 }
@@ -38,4 +42,8 @@ void GameDraw(float alpha) {
 }
 
 void GameShutdown(void) {
+}
+
+EcsWorld *GameEcs(void) {
+    return &ecsWorld;
 }

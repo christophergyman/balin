@@ -7,6 +7,7 @@
 #include "engine/arena.h"
 #include "engine/log.h"
 #include "engine/time.h"
+#include "game/ecs.h"
 #include "game/memory.h"
 
 static void WriteTextFile(const char *path, const char *text) {
@@ -228,6 +229,303 @@ static void TestClockCatchUpCap(void) {
     assert(ClockBeginFrame(&clock, 1.0 / 60.0) == 1);
 }
 
+// ECS test components. Real component ids land with their system tickets.
+typedef enum {
+    TEST_COMPONENT_POS = 0,
+    TEST_COMPONENT_VEL = 1,
+} TestComponentId;
+
+typedef struct TestPos {
+    float x;
+    float y;
+} TestPos;
+
+typedef struct TestVel {
+    float vx;
+    float vy;
+} TestVel;
+
+static int CountQuery(const EcsWorld *world, EcsMask required) {
+    EcsQuery query = EcsQueryAll(required);
+    Entity entity;
+    int count = 0;
+    while (EcsQueryNext(world, &query, &entity)) {
+        count++;
+    }
+    return count;
+}
+
+static bool QueryHas(const EcsWorld *world, EcsMask required, Entity wanted) {
+    EcsQuery query = EcsQueryAll(required);
+    Entity entity;
+    while (EcsQueryNext(world, &query, &entity)) {
+        if (entity == wanted) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void TestEcsCreate(void) {
+    EcsWorld world;
+    EcsInit(&world);
+
+    Entity first = EcsCreate(&world);
+    assert(first != ENTITY_INVALID);
+    assert(EntityIndex(first) == 0);
+    assert(EntityGeneration(first) == 0);
+    assert(EcsAlive(&world, first));
+    assert(EcsAliveCount(&world) == 1);
+
+    // Fill the world. Fresh slots come in index order.
+    for (uint16_t i = 1; i < ECS_MAX_ENTITIES; i++) {
+        Entity entity = EcsCreate(&world);
+        assert(entity != ENTITY_INVALID);
+        assert(EntityIndex(entity) == i);
+    }
+    assert(EcsAliveCount(&world) == ECS_MAX_ENTITIES);
+
+    // Slot 257 does not exist.
+    assert(EcsCreate(&world) == ENTITY_INVALID);
+}
+
+static void TestEcsDestroyDeferred(void) {
+    EcsWorld world;
+    EcsInit(&world);
+
+    Entity a = EcsCreate(&world);
+    Entity b = EcsCreate(&world);
+
+    assert(EcsDestroy(&world, a));
+    assert(!EcsAlive(&world, a));
+    assert(EcsAlive(&world, b));
+    assert(EcsAliveCount(&world) == 1);
+
+    // Double destroy and stale destroys are no-ops.
+    assert(!EcsDestroy(&world, a));
+
+    // The dead slot is not reused until the flush.
+    Entity c = EcsCreate(&world);
+    assert(EntityIndex(c) == 2);
+
+    EcsFlush(&world);
+
+    // The freed slot returns with a bumped generation.
+    Entity d = EcsCreate(&world);
+    assert(EntityIndex(d) == EntityIndex(a));
+    assert(EntityGeneration(d) == EntityGeneration(a) + 1);
+    assert(EcsAlive(&world, d));
+    assert(!EcsAlive(&world, a));
+}
+
+static void TestEcsGenerationReuse(void) {
+    EcsWorld world;
+    EcsInit(&world);
+
+    Entity first = EcsCreate(&world);
+    assert(EcsDestroy(&world, first));
+    EcsFlush(&world);
+
+    Entity second = EcsCreate(&world);
+    assert(EntityIndex(second) == EntityIndex(first));
+    assert(EntityGeneration(second) == EntityGeneration(first) + 1);
+
+    // A second reuse cycle bumps the generation again.
+    assert(EcsDestroy(&world, second));
+    EcsFlush(&world);
+    Entity third = EcsCreate(&world);
+    assert(EntityIndex(third) == EntityIndex(first));
+    assert(EntityGeneration(third) == EntityGeneration(first) + 2);
+}
+
+static void TestEcsStaleHandles(void) {
+    EcsWorld world;
+    EcsInit(&world);
+
+    static TestPos positions[ECS_MAX_ENTITIES];
+    EcsPool posPool;
+    EcsPoolInit(&posPool, TEST_COMPONENT_POS, positions, sizeof(TestPos));
+
+    Entity first = EcsCreate(&world);
+    assert(EcsAdd(&world, first, &posPool) != NULL);
+    assert(EcsDestroy(&world, first));
+    EcsFlush(&world);
+
+    Entity second = EcsCreate(&world);
+    assert(EntityIndex(second) == EntityIndex(first));
+
+    // The old handle cannot see, touch, or kill the new entity.
+    assert(!EcsAlive(&world, first));
+    assert(EcsGet(&world, first, &posPool) == NULL);
+    assert(EcsAdd(&world, first, &posPool) == NULL);
+    assert(!EcsDestroy(&world, first));
+
+    // A fabricated handle with an out-of-range index is rejected.
+    assert(!EcsAlive(&world, EntityMake(700, 0)));
+
+    // The new handle works.
+    TestPos *pos = EcsAdd(&world, second, &posPool);
+    assert(pos != NULL);
+    pos->x = 3.5f;
+    TestPos *reread = EcsGet(&world, second, &posPool);
+    assert(reread != NULL);
+    assert(reread->x == 3.5f);
+}
+
+static void TestEcsQueryMasks(void) {
+    EcsWorld world;
+    EcsInit(&world);
+
+    static TestPos positions[ECS_MAX_ENTITIES];
+    static TestVel velocities[ECS_MAX_ENTITIES];
+    EcsPool posPool;
+    EcsPool velPool;
+    EcsPoolInit(&posPool, TEST_COMPONENT_POS, positions, sizeof(TestPos));
+    EcsPoolInit(&velPool, TEST_COMPONENT_VEL, velocities, sizeof(TestVel));
+
+    Entity e0 = EcsCreate(&world);
+    Entity e1 = EcsCreate(&world);
+    Entity e2 = EcsCreate(&world);
+    EcsCreate(&world); // e3 stays empty, for the empty-mask query.
+
+    EcsAdd(&world, e0, &posPool);
+    EcsAdd(&world, e1, &posPool);
+    EcsAdd(&world, e1, &velPool);
+    EcsAdd(&world, e2, &velPool);
+
+    EcsMask posMask = EcsBit(TEST_COMPONENT_POS);
+    EcsMask moveMask = posMask | EcsBit(TEST_COMPONENT_VEL);
+
+    // Single component and AND queries.
+    assert(CountQuery(&world, posMask) == 2);
+    assert(QueryHas(&world, posMask, e0));
+    assert(QueryHas(&world, posMask, e1));
+    assert(!QueryHas(&world, posMask, e2));
+    assert(CountQuery(&world, moveMask) == 1);
+    assert(QueryHas(&world, moveMask, e1));
+
+    // An empty required mask matches every live entity.
+    assert(CountQuery(&world, 0) == 4);
+
+    // Removing a component drops the entity from the query.
+    EcsRemove(&world, e1, &posPool);
+    assert(CountQuery(&world, posMask) == 1);
+    assert(!QueryHas(&world, posMask, e1));
+
+    // Nobody has both components now, but each keeps its velocity.
+    EcsMask velMask = EcsBit(TEST_COMPONENT_VEL);
+    assert(CountQuery(&world, moveMask) == 0);
+    assert(QueryHas(&world, velMask, e1));
+    assert(QueryHas(&world, velMask, e2));
+
+    // Destroying drops the entity before the flush runs.
+    assert(EcsDestroy(&world, e0));
+    assert(CountQuery(&world, posMask) == 0);
+    assert(CountQuery(&world, 0) == 3);
+}
+
+static void TestEcsDestroyDuringQuery(void) {
+    EcsWorld world;
+    EcsInit(&world);
+
+    Entity entities[4];
+    for (int i = 0; i < 4; i++) {
+        entities[i] = EcsCreate(&world);
+    }
+
+    // Destroying mid-scan must not disturb the scan.
+    EcsQuery query = EcsQueryAll(0);
+    Entity entity;
+    int visited = 0;
+    while (EcsQueryNext(&world, &query, &entity)) {
+        visited++;
+        if (entity == entities[0] || entity == entities[1]) {
+            assert(EcsDestroy(&world, entity));
+        }
+    }
+    assert(visited == 4);
+    assert(EcsAliveCount(&world) == 2);
+
+    EcsFlush(&world);
+    assert(EcsAliveCount(&world) == 2);
+
+    // Freed slots return in LIFO order: the last destroyed pops first.
+    Entity reused = EcsCreate(&world);
+    assert(EntityIndex(reused) == EntityIndex(entities[1]));
+    assert(EntityGeneration(reused) == EntityGeneration(entities[1]) + 1);
+}
+
+static void TestEcsPool(void) {
+    EcsWorld world;
+    EcsInit(&world);
+
+    static TestPos positions[ECS_MAX_ENTITIES];
+    EcsPool posPool;
+    EcsPoolInit(&posPool, TEST_COMPONENT_POS, positions, sizeof(TestPos));
+
+    Entity entity = EcsCreate(&world);
+
+    TestPos *pos = EcsAdd(&world, entity, &posPool);
+    assert(pos == &positions[EntityIndex(entity)]);
+    assert(pos->x == 0.0f && pos->y == 0.0f);
+    assert(EcsHas(&world, entity, TEST_COMPONENT_POS));
+    assert(EcsComponentCount(&world, TEST_COMPONENT_POS) == 1);
+
+    pos->x = 10.0f;
+
+    // Adding twice returns the same row and keeps the count.
+    TestPos *again = EcsAdd(&world, entity, &posPool);
+    assert(again == pos);
+    assert(again->x == 10.0f);
+    assert(EcsComponentCount(&world, TEST_COMPONENT_POS) == 1);
+
+    EcsRemove(&world, entity, &posPool);
+    assert(!EcsHas(&world, entity, TEST_COMPONENT_POS));
+    assert(EcsGet(&world, entity, &posPool) == NULL);
+    assert(EcsComponentCount(&world, TEST_COMPONENT_POS) == 0);
+
+    // Removing twice is a no-op.
+    EcsRemove(&world, entity, &posPool);
+    assert(EcsComponentCount(&world, TEST_COMPONENT_POS) == 0);
+
+    // A stale handle cannot add.
+    assert(EcsDestroy(&world, entity));
+    EcsFlush(&world);
+    assert(EcsAdd(&world, entity, &posPool) == NULL);
+}
+
+static void TestEcsCounts(void) {
+    EcsWorld world;
+    EcsInit(&world);
+
+    static TestPos positions[ECS_MAX_ENTITIES];
+    static TestVel velocities[ECS_MAX_ENTITIES];
+    EcsPool posPool;
+    EcsPool velPool;
+    EcsPoolInit(&posPool, TEST_COMPONENT_POS, positions, sizeof(TestPos));
+    EcsPoolInit(&velPool, TEST_COMPONENT_VEL, velocities, sizeof(TestVel));
+
+    Entity a = EcsCreate(&world);
+    Entity b = EcsCreate(&world);
+    EcsAdd(&world, a, &posPool);
+    EcsAdd(&world, a, &velPool);
+    EcsAdd(&world, b, &posPool);
+
+    assert(EcsAliveCount(&world) == 2);
+    assert(EcsComponentCount(&world, TEST_COMPONENT_POS) == 2);
+    assert(EcsComponentCount(&world, TEST_COMPONENT_VEL) == 1);
+
+    // Destroy drops the counts at once; the flush keeps them.
+    assert(EcsDestroy(&world, a));
+    assert(EcsAliveCount(&world) == 1);
+    assert(EcsComponentCount(&world, TEST_COMPONENT_POS) == 1);
+    assert(EcsComponentCount(&world, TEST_COMPONENT_VEL) == 0);
+
+    EcsFlush(&world);
+    assert(EcsAliveCount(&world) == 1);
+    assert(EcsComponentCount(&world, TEST_COMPONENT_POS) == 1);
+}
+
 int main(void) {
     TestScaffold();
     TestLog();
@@ -238,6 +536,15 @@ int main(void) {
     TestClockAlpha();
     TestClockFrameRateIndependence();
     TestClockCatchUpCap();
+
+    TestEcsCreate();
+    TestEcsDestroyDeferred();
+    TestEcsGenerationReuse();
+    TestEcsStaleHandles();
+    TestEcsQueryMasks();
+    TestEcsDestroyDuringQuery();
+    TestEcsPool();
+    TestEcsCounts();
 
     printf("balin_tests: all tests passed\n");
     return 0;

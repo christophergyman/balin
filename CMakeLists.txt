@@ -47,6 +47,7 @@ set(BALIN_SOURCES
     src/engine/log.c
     src/engine/time.c
     src/main.c
+    src/game/ecs.c
     src/game/game.c
     src/game/memory.c
     src/game/systems.c
@@ -69,6 +70,7 @@ add_executable(balin_tests
     src/engine/arena.c
     src/engine/log.c
     src/engine/time.c
+    src/game/ecs.c
     src/game/memory.c
 )
 target_include_directories(balin_tests PRIVATE src)
