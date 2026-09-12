@@ -5,10 +5,10 @@
 #define GAME_RUN_ARENA_BYTES (1 * 1024 * 1024)
 #define GAME_FRAME_ARENA_BYTES (256 * 1024)
 
-static unsigned char assetMemory[GAME_ASSET_ARENA_BYTES];
-static unsigned char levelMemory[GAME_LEVEL_ARENA_BYTES];
-static unsigned char runMemory[GAME_RUN_ARENA_BYTES];
-static unsigned char frameMemory[GAME_FRAME_ARENA_BYTES];
+static _Alignas(ARENA_DEFAULT_ALIGNMENT) unsigned char assetMemory[GAME_ASSET_ARENA_BYTES];
+static _Alignas(ARENA_DEFAULT_ALIGNMENT) unsigned char levelMemory[GAME_LEVEL_ARENA_BYTES];
+static _Alignas(ARENA_DEFAULT_ALIGNMENT) unsigned char runMemory[GAME_RUN_ARENA_BYTES];
+static _Alignas(ARENA_DEFAULT_ALIGNMENT) unsigned char frameMemory[GAME_FRAME_ARENA_BYTES];
 
 static Arena assetArena;
 static Arena levelArena;

@@ -1,5 +1,7 @@
 #include "engine/arena.h"
 
+#include <stdint.h>
+
 #include "engine/log.h"
 
 static int IsPowerOfTwo(size_t value) {
@@ -23,7 +25,12 @@ void *ArenaPush(Arena *arena, size_t size, size_t alignment) {
     ASSERT(IsPowerOfTwo(alignment), LOG_CAT_ENGINE, "arena '%s' alignment %zu is not a power of two",
         arena->name, alignment);
 
-    size_t start = (arena->offset + alignment - 1) & ~(alignment - 1);
+    // Align the absolute address, not only the offset, so the backing buffer
+    // does not need to be aligned by the caller.
+    uintptr_t base = (uintptr_t)arena->memory;
+    uintptr_t cursor = base + arena->offset;
+    uintptr_t aligned = (cursor + (uintptr_t)alignment - 1) & ~((uintptr_t)alignment - 1);
+    size_t start = (size_t)(aligned - base);
 
     ASSERT(start <= arena->capacity && size <= arena->capacity - start, LOG_CAT_ENGINE,
         "arena '%s' overflow: capacity %zu, offset %zu, size %zu",

@@ -82,17 +82,19 @@ static void TestLog(void) {
 }
 
 static void TestArenaPushAndAlignment(void) {
-    static unsigned char storage[1024];
+    // Start one byte into the buffer so the base is deliberately misaligned.
+    // ArenaPush must align the absolute address, not only the offset.
+    static _Alignas(64) unsigned char storage[1024 + 64];
     Arena arena;
-    ArenaInit(&arena, "test", storage, sizeof(storage));
+    ArenaInit(&arena, "test", storage + 1, sizeof(storage) - 1);
 
     assert(ArenaUsed(&arena) == 0);
-    assert(ArenaCapacity(&arena) == sizeof(storage));
+    assert(ArenaCapacity(&arena) == sizeof(storage) - 1);
 
     for (size_t alignment = 1; alignment <= 64; alignment *= 2) {
         void *block = ArenaPush(&arena, 3, alignment);
         assert(((uintptr_t)block % alignment) == 0);
-        assert((unsigned char *)block >= storage);
+        assert((unsigned char *)block >= storage + 1);
         assert((unsigned char *)block + 3 <= storage + sizeof(storage));
     }
 
