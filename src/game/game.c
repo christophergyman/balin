@@ -2,24 +2,39 @@
 
 #include "raylib.h"
 
-#define SQUARE_SIZE 64
+#include "engine/time.h"
+
+#define PROBE_SIZE 64
+#define PROBE_SPEED 120.0f // Pixels per second, so 2 pixels per tick at 60 Hz.
+
+// Temporary debug probe. Movement runs once per fixed tick. Drawing
+// interpolates between ticks with alpha.
+static float probeX;
+static float probePreviousX;
 
 void GameInit(void) {
+    probeX = 0.0f;
+    probePreviousX = probeX;
 }
 
-void GameUpdate(void) {
+void GameProbeTick(void) {
+    probePreviousX = probeX;
+    probeX += PROBE_SPEED * (float)TICK_DT;
+
+    float limit = (float)GetScreenWidth() - PROBE_SIZE;
+    if (probeX > limit) {
+        probeX = 0.0f;
+        probePreviousX = probeX; // Do not interpolate across the reset.
+    }
 }
 
-void GameDraw(void) {
+void GameDraw(float alpha) {
     ClearBackground(BLACK);
 
-    DrawRectangle(
-        (GetScreenWidth() - SQUARE_SIZE) / 2,
-        (GetScreenHeight() - SQUARE_SIZE) / 2,
-        SQUARE_SIZE,
-        SQUARE_SIZE,
-        WHITE
-    );
+    float x = probePreviousX + (probeX - probePreviousX) * alpha;
+    float y = ((float)GetScreenHeight() - PROBE_SIZE) / 2.0f;
+
+    DrawRectangle((int)x, (int)y, PROBE_SIZE, PROBE_SIZE, WHITE);
 }
 
 void GameShutdown(void) {

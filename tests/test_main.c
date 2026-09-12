@@ -6,6 +6,7 @@
 
 #include "engine/arena.h"
 #include "engine/log.h"
+#include "engine/time.h"
 #include "game/memory.h"
 
 static void WriteTextFile(const char *path, const char *text) {
@@ -145,12 +146,98 @@ static void TestGameMemory(void) {
     assert(ArenaUsed(GameArenaLevel()) == 64);
 }
 
+static int TicksFor(int frames, double frameSeconds) {
+    Clock clock;
+    ClockInit(&clock);
+
+    for (int frame = 0; frame < frames; frame++) {
+        int steps = ClockBeginFrame(&clock, frameSeconds);
+        for (int step = 0; step < steps; step++) {
+            ClockBeginTick(&clock);
+        }
+    }
+
+    return (int)clock.tick;
+}
+
+static void TestClockStepsPerFrame(void) {
+    Clock clock;
+    ClockInit(&clock);
+
+    // 30 FPS needs two steps per frame, 60 FPS needs one.
+    assert(ClockBeginFrame(&clock, 1.0 / 30.0) == 2);
+    ClockDropPending(&clock);
+    assert(ClockBeginFrame(&clock, 1.0 / 60.0) == 1);
+    ClockDropPending(&clock);
+
+    // 120 FPS is half a tick per frame, so a step every other frame.
+    assert(ClockBeginFrame(&clock, 1.0 / 120.0) == 0);
+    assert(ClockBeginFrame(&clock, 1.0 / 120.0) == 1);
+}
+
+static void TestClockAlpha(void) {
+    Clock clock;
+    ClockInit(&clock);
+
+    ClockBeginFrame(&clock, 0.5 * TICK_DT);
+    assert(ClockAlpha(&clock) > 0.49f && ClockAlpha(&clock) < 0.51f);
+
+    ClockBeginFrame(&clock, 0.5 * TICK_DT);
+    ClockBeginTick(&clock);
+    assert(ClockAlpha(&clock) < 0.001f);
+
+    ClockDropPending(&clock);
+    assert(ClockAlpha(&clock) == 0.0f);
+}
+
+static void TestClockFrameRateIndependence(void) {
+    // Two seconds of frames. All three rates must run the same tick count,
+    // per the ADR-004 confirmation.
+    assert(TicksFor(60, 1.0 / 30.0) == 2 * TICK_RATE);
+    assert(TicksFor(120, 1.0 / 60.0) == 2 * TICK_RATE);
+    assert(TicksFor(240, 1.0 / 120.0) == 2 * TICK_RATE);
+
+    // 144 FPS does not divide the tick. The remainder carries in the
+    // accumulator, so the count stays within one tick of two seconds.
+    int at144 = TicksFor(288, 1.0 / 144.0);
+    assert(at144 >= 2 * TICK_RATE - 1 && at144 <= 2 * TICK_RATE);
+
+    // Dash stand-in: distance is speed * ticks * dt. Equal ticks give equal
+    // distance at every frame rate. The real dash re-checks this in BAL-23.
+    double speed = 120.0; // Pixels per second.
+    double at30 = speed * TICK_DT * (double)TicksFor(60, 1.0 / 30.0);
+    double at60 = speed * TICK_DT * (double)TicksFor(120, 1.0 / 60.0);
+    double at120 = speed * TICK_DT * (double)TicksFor(240, 1.0 / 120.0);
+    assert(at30 == at60);
+    assert(at60 == at120);
+}
+
+static void TestClockCatchUpCap(void) {
+    Clock clock;
+    ClockInit(&clock);
+
+    // A one second hitch runs at most five steps and drops the debt.
+    int steps = ClockBeginFrame(&clock, 1.0);
+    assert(steps == MAX_STEPS_PER_FRAME);
+    for (int step = 0; step < steps; step++) {
+        ClockBeginTick(&clock);
+    }
+    assert(clock.tick == MAX_STEPS_PER_FRAME);
+
+    // The next frame does not try to catch up.
+    assert(ClockBeginFrame(&clock, 1.0 / 60.0) == 1);
+}
+
 int main(void) {
     TestScaffold();
     TestLog();
     TestArenaPushAndAlignment();
     TestArenaReset();
     TestGameMemory();
+    TestClockStepsPerFrame();
+    TestClockAlpha();
+    TestClockFrameRateIndependence();
+    TestClockCatchUpCap();
 
     printf("balin_tests: all tests passed\n");
     return 0;
