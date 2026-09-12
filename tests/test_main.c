@@ -1,9 +1,12 @@
 #include <assert.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 
+#include "engine/arena.h"
 #include "engine/log.h"
+#include "game/memory.h"
 
 static void WriteTextFile(const char *path, const char *text) {
     FILE *file = fopen(path, "w");
@@ -78,9 +81,74 @@ static void TestLog(void) {
     LogShutdown();
 }
 
+static void TestArenaPushAndAlignment(void) {
+    static unsigned char storage[1024];
+    Arena arena;
+    ArenaInit(&arena, "test", storage, sizeof(storage));
+
+    assert(ArenaUsed(&arena) == 0);
+    assert(ArenaCapacity(&arena) == sizeof(storage));
+
+    for (size_t alignment = 1; alignment <= 64; alignment *= 2) {
+        void *block = ArenaPush(&arena, 3, alignment);
+        assert(((uintptr_t)block % alignment) == 0);
+        assert((unsigned char *)block >= storage);
+        assert((unsigned char *)block + 3 <= storage + sizeof(storage));
+    }
+
+    void *first = ArenaPush(&arena, 16, ARENA_DEFAULT_ALIGNMENT);
+    size_t afterFirst = ArenaUsed(&arena);
+    void *second = ArenaPush(&arena, 16, ARENA_DEFAULT_ALIGNMENT);
+    assert(second == (unsigned char *)first + 16);
+    assert(ArenaUsed(&arena) == afterFirst + 16);
+}
+
+static void TestArenaReset(void) {
+    static unsigned char storage[256];
+    Arena arena;
+    ArenaInit(&arena, "test", storage, sizeof(storage));
+
+    void *first = ArenaPush(&arena, 100, 8);
+    assert(ArenaUsed(&arena) > 0);
+
+    ArenaReset(&arena);
+    assert(ArenaUsed(&arena) == 0);
+
+    void *again = ArenaPush(&arena, 8, 8);
+    assert(again == first);
+}
+
+static void TestGameMemory(void) {
+    GameMemoryInit();
+
+    assert(ArenaUsed(GameArenaAsset()) == 0);
+    assert(ArenaUsed(GameArenaLevel()) == 0);
+    assert(ArenaUsed(GameArenaRun()) == 0);
+    assert(ArenaUsed(GameArenaFrame()) == 0);
+
+    ArenaPush(GameArenaAsset(), 64, ARENA_DEFAULT_ALIGNMENT);
+    ArenaPush(GameArenaLevel(), 64, ARENA_DEFAULT_ALIGNMENT);
+    ArenaPush(GameArenaRun(), 64, ARENA_DEFAULT_ALIGNMENT);
+    ArenaPush(GameArenaFrame(), 64, ARENA_DEFAULT_ALIGNMENT);
+
+    GameMemoryResetFrame();
+    assert(ArenaUsed(GameArenaFrame()) == 0);
+    assert(ArenaUsed(GameArenaAsset()) == 64);
+    assert(ArenaUsed(GameArenaLevel()) == 64);
+    assert(ArenaUsed(GameArenaRun()) == 64);
+
+    GameMemoryResetRun();
+    assert(ArenaUsed(GameArenaRun()) == 0);
+    assert(ArenaUsed(GameArenaAsset()) == 64);
+    assert(ArenaUsed(GameArenaLevel()) == 64);
+}
+
 int main(void) {
     TestScaffold();
     TestLog();
+    TestArenaPushAndAlignment();
+    TestArenaReset();
+    TestGameMemory();
 
     printf("balin_tests: all tests passed\n");
     return 0;

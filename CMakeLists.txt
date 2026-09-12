@@ -43,9 +43,11 @@ function(balin_flags target)
 endfunction()
 
 set(BALIN_SOURCES
+    src/engine/arena.c
     src/engine/log.c
     src/main.c
     src/game/game.c
+    src/game/memory.c
 )
 
 if(BALIN_DEV)
@@ -62,7 +64,9 @@ balin_flags(balin)
 
 add_executable(balin_tests
     tests/test_main.c
+    src/engine/arena.c
     src/engine/log.c
+    src/game/memory.c
 )
 target_include_directories(balin_tests PRIVATE src)
 target_compile_definitions(balin_tests PRIVATE BALIN_DEV=$<BOOL:${BALIN_DEV}>)
