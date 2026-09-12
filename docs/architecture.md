@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Draft v1.1 |
+| Status | Draft v1.2 |
 | Owner | cman |
 | Date | 2026-09-11 |
 | Scope | Engine and code architecture for the Balin demo |
@@ -127,6 +127,7 @@ docs/
 | ADR-018 | Assets in repo, copied next to the executable for release | accepted | 2026-09-11 |
 | ADR-019 | Fail fast on malformed data | accepted | 2026-09-11 |
 | ADR-020 | Structured logfmt events, a flight recorder ring, and bug bundles | accepted | 2026-09-11 |
+| ADR-021 | Per-entity component masks in the ECS | accepted | 2026-09-12 |
 
 ## 4. Decision records
 
@@ -258,6 +259,7 @@ Persistent objects use fixed arrays and structs, not the arenas. Arenas serve va
 
 - Status: accepted
 - Date: 2026-09-11
+- Superseded by: ADR-021 for the mask layout only. The rest stands.
 
 **Context.** The PRD has three enemy types, a player, pickups, lights, and burn effects. A full ECS is unnecessary machinery, but ad-hoc structs would branch constantly.
 
@@ -823,6 +825,35 @@ Manifests and images reload when their modification times change in dev builds. 
 
 **Confirmation.** Tests for the logfmt shape and for a malformed `log.cfg`. A test that a disabled level does no formatting. A manual check that a threshold edit applies while the game runs and that F9 writes a complete bundle. ADR-015 carries a supersession note.
 
+### ADR-021: Per-entity component masks in the ECS
+
+- Status: accepted
+- Date: 2026-09-12
+
+**Context.** ADR-005 chose a small ECS with one indexed array and one presence bitset per component. That sentence has two readings: a 256-bit presence bitset per component over entity slots, or one 64-bit component mask per entity. ADR-005's own consequence, "bitset masks cap components at 64", only holds for the per-entity reading. BAL-11 implemented the storage and needed one reading fixed.
+
+**Decision drivers**
+
+- Query cost and code size at 256 fixed entities.
+- An entity's component list should be readable in the debugger as one value.
+- The first component set has 11 components, so a 64-type cap has headroom.
+
+**Considered options**
+
+1. One mask per entity. Good: one word test per slot, entity state in one value, simplest code. Bad: caps component types at 64.
+2. One presence bitset per component. Good: no component cap, literal ADR-005 wording. Bad: four words per component and more bookkeeping per query at a scale where scanning 256 slots is already trivial.
+
+**Decision outcome.** We will store one `uint64_t` component mask per entity slot in `EcsWorld`, with one bit per component id. Component data stays in one fixed array per component, with a per-component count for the overlay. Queries scan the slot range and test the mask. This supersedes the mask layout of ADR-005 only; the rest of ADR-005 stands.
+
+**Consequences**
+
+- Positive: a query is one AND compare per slot.
+- Positive: component counts feed the F3 overlay for free.
+- Negative: component ids cap at 64. `_Static_assert(ECS_MAX_COMPONENTS <= 64)` in `ecs.c` fails the build past the cap.
+- Negative: the mask and the pool rows are two sources that must stay in sync. Only `EcsAdd`, `EcsRemove`, and `EcsDestroy` touch both.
+
+**Confirmation.** The mask iteration, stale handle, and destroy tests in `balin_tests`. The static assert fires if `ECS_MAX_COMPONENTS` grows past 64.
+
 ## 5. Decision backlog
 
 Items not yet decided or deliberately deferred. Each can become an ADR when it is promoted.
@@ -870,3 +901,4 @@ Items not yet decided or deliberately deferred. Each can become an ADR when it i
 |---|---|
 | 2026-09-11 | v1.0 draft. ADR-001 through ADR-019 recorded from the architecture interview. |
 | 2026-09-11 | v1.1. ADR-020 recorded. Logging part of ADR-015 superseded. |
+| 2026-09-12 | v1.2. ADR-021 recorded. Mask layout of ADR-005 superseded. |
