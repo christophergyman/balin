@@ -1,6 +1,7 @@
 #include "game/level.h"
 
 #include <errno.h>
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -50,7 +51,8 @@ static void TrimRight(char *text) {
 }
 
 // Copies the next whitespace-delimited token into out and advances cursor
-// past it. Returns false at the end of the line.
+// past the whole token, even when it is longer than out. A token too long for
+// out is truncated in the copy and fails later parsing, never split.
 static bool NextToken(const char **cursor, char *out, size_t cap) {
     const char *text = *cursor;
     while (*text == ' ' || *text == '\t') {
@@ -65,17 +67,16 @@ static bool NextToken(const char **cursor, char *out, size_t cap) {
     while (text[length] != '\0' && text[length] != ' ' && text[length] != '\t') {
         length++;
     }
-    if (length >= cap) {
-        length = cap - 1;
-    }
-    memcpy(out, text, length);
-    out[length] = '\0';
+
+    size_t copyLength = (length < cap - 1) ? length : cap - 1;
+    memcpy(out, text, copyLength);
+    out[copyLength] = '\0';
     *cursor = text + length;
     return true;
 }
 
 static bool ParseLong(const char *text, long *out) {
-    if (text == NULL) {
+    if (text == NULL || text[0] == '+') {
         return false;
     }
 
@@ -89,7 +90,7 @@ static bool ParseLong(const char *text, long *out) {
 }
 
 static bool ParseUnsigned(const char *text, unsigned long *out) {
-    if (text == NULL || text[0] == '\0' || text[0] == '-') {
+    if (text == NULL || text[0] == '\0' || text[0] == '-' || text[0] == '+') {
         return false;
     }
 
@@ -233,7 +234,7 @@ static bool ParseRow(const char *text, const char *path, int line, Level *level,
 
         if (count > level->width) {
             snprintf(error, cap, "%s:%d: run count %lu is larger than the %u tile width",
-                     path, line, count, level->width);
+                     path, line, count, (unsigned)level->width);
             return false;
         }
 
@@ -254,7 +255,7 @@ static bool ParseRow(const char *text, const char *path, int line, Level *level,
 
     if (total != level->width) {
         snprintf(error, cap, "%s:%d: row has %lu tiles, expected %u",
-                 path, line, (unsigned long)total, level->width);
+                 path, line, (unsigned long)total, (unsigned)level->width);
         return false;
     }
 
@@ -292,14 +293,16 @@ static bool ParsePoint(const char *xText, const char *yText, const Level *level,
 }
 
 // Points at the first record of each kind pushed into the arena during this
-// parse. Records of one kind are contiguous, since nothing else pushes while
-// the record stage runs.
+// parse. The format groups records by kind, so the records of each kind are
+// contiguous: entities, then gates, then shrines. lastKind enforces that
+// order and rejects a kind that comes back after a later kind started.
 typedef struct RecordSink {
     Level *level;
     Arena *arena;
     LevelEntity *firstEntity;
     LevelGate *firstGate;
     LevelShrine *firstShrine;
+    int lastKind; // -1 before the first record.
 } RecordSink;
 
 static bool ParseEntity(RecordSink *sink, const char *cursor, const char *path,
@@ -449,18 +452,40 @@ static bool ParseRecord(RecordSink *sink, const char *text, const char *path,
         return true; // Unreachable: blank lines are skipped before this stage.
     }
 
+    // Record kinds in file order, per the grouping rule in level.h.
+    static const char *const recordNames[] = { "entity", "gate", "shrine" };
+    int kind = -1;
+
     if (strcmp(keyword, "entity") == 0) {
-        return ParseEntity(sink, cursor, path, line, error, cap);
-    }
-    if (strcmp(keyword, "gate") == 0) {
-        return ParseGate(sink, cursor, path, line, error, cap);
-    }
-    if (strcmp(keyword, "shrine") == 0) {
-        return ParseShrine(sink, cursor, path, line, error, cap);
+        kind = 0;
+    } else if (strcmp(keyword, "gate") == 0) {
+        kind = 1;
+    } else if (strcmp(keyword, "shrine") == 0) {
+        kind = 2;
+    } else {
+        snprintf(error, cap, "%s:%d: unknown record '%s'", path, line, keyword);
+        return false;
     }
 
-    snprintf(error, cap, "%s:%d: unknown record '%s'", path, line, keyword);
-    return false;
+    if (kind < sink->lastKind) {
+        snprintf(error, cap, "%s:%d: %s records must come before %s records",
+                 path, line, recordNames[kind], recordNames[sink->lastKind]);
+        return false;
+    }
+
+    bool ok = false;
+    if (kind == 0) {
+        ok = ParseEntity(sink, cursor, path, line, error, cap);
+    } else if (kind == 1) {
+        ok = ParseGate(sink, cursor, path, line, error, cap);
+    } else {
+        ok = ParseShrine(sink, cursor, path, line, error, cap);
+    }
+    if (!ok) {
+        return false;
+    }
+    sink->lastKind = kind;
+    return true;
 }
 
 typedef enum ParseStage {
@@ -469,6 +494,49 @@ typedef enum ParseStage {
     STAGE_LAYERS,
     STAGE_RECORDS,
 } ParseStage;
+
+typedef enum LineStatus {
+    LINE_OK = 0,
+    LINE_EOF,
+    LINE_TOO_LONG,
+    LINE_NUL,
+    LINE_READ_ERROR,
+} LineStatus;
+
+// Reads one line into line, keeping the newline. Rejects NUL bytes and lines
+// longer than cap. A final line without a newline still counts as a line.
+static LineStatus ReadLine(FILE *file, char *line, size_t cap) {
+    size_t length = 0;
+    int character;
+
+    while ((character = fgetc(file)) != EOF) {
+        if (character == '\0') {
+            return LINE_NUL;
+        }
+        if (character == '\n') {
+            if (length + 1 >= cap) {
+                return LINE_TOO_LONG;
+            }
+            line[length++] = '\n';
+            line[length] = '\0';
+            return LINE_OK;
+        }
+        if (length + 1 >= cap) {
+            return LINE_TOO_LONG;
+        }
+        line[length++] = (char)character;
+    }
+
+    if (ferror(file)) {
+        return LINE_READ_ERROR;
+    }
+    if (length == 0) {
+        return LINE_EOF;
+    }
+
+    line[length] = '\0';
+    return LINE_OK;
+}
 
 bool LevelParse(Level *out, const char *path, Arena *arena, char *error, size_t cap) {
     FILE *file = fopen(path, "r");
@@ -479,7 +547,7 @@ bool LevelParse(Level *out, const char *path, Arena *arena, char *error, size_t 
 
     Level parsed;
     memset(&parsed, 0, sizeof(parsed));
-    RecordSink sink = { &parsed, arena, NULL, NULL, NULL };
+    RecordSink sink = { &parsed, arena, NULL, NULL, NULL, -1 };
 
     ParseStage stage = STAGE_HEADER;
     int layerIndex = 0;
@@ -489,12 +557,25 @@ bool LevelParse(Level *out, const char *path, Arena *arena, char *error, size_t 
     char line[LEVEL_LINE_CAP];
     int lineNumber = 0;
 
-    while (ok && fgets(line, sizeof(line), file) != NULL) {
-        lineNumber++;
+    while (ok) {
+        LineStatus status = ReadLine(file, line, sizeof(line));
+        if (status == LINE_EOF) {
+            break;
+        }
 
-        size_t length = strlen(line);
-        if (length == sizeof(line) - 1 && line[length - 1] != '\n') {
+        lineNumber++;
+        if (status == LINE_TOO_LONG) {
             snprintf(error, cap, "%s:%d: line is too long", path, lineNumber);
+            ok = false;
+            break;
+        }
+        if (status == LINE_NUL) {
+            snprintf(error, cap, "%s:%d: line contains a NUL byte", path, lineNumber);
+            ok = false;
+            break;
+        }
+        if (status == LINE_READ_ERROR) {
+            snprintf(error, cap, "%s: cannot read: %s", path, strerror(errno));
             ok = false;
             break;
         }
@@ -557,16 +638,18 @@ bool LevelParse(Level *out, const char *path, Arena *arena, char *error, size_t 
     }
 
     if (ok && stage != STAGE_RECORDS) {
+        int nextLine = lineNumber + 1;
         if (stage == STAGE_HEADER) {
-            snprintf(error, cap, "%s: unexpected end of file, expected 'balin-level' header", path);
+            snprintf(error, cap, "%s:%d: unexpected end of file, expected 'balin-level' header",
+                     path, nextLine);
         } else if (stage == STAGE_SIZE) {
-            snprintf(error, cap, "%s: unexpected end of file, expected 'size'", path);
+            snprintf(error, cap, "%s:%d: unexpected end of file, expected 'size'", path, nextLine);
         } else if (!layerStarted) {
-            snprintf(error, cap, "%s: unexpected end of file, expected '%s' layer",
-                     path, layerNames[layerIndex]);
+            snprintf(error, cap, "%s:%d: unexpected end of file, expected '%s' layer",
+                     path, nextLine, layerNames[layerIndex]);
         } else {
-            snprintf(error, cap, "%s: unexpected end of file, expected '%s' layer row %d",
-                     path, layerNames[layerIndex], layerRow + 1);
+            snprintf(error, cap, "%s:%d: unexpected end of file, expected '%s' layer row %d",
+                     path, nextLine, layerNames[layerIndex], layerRow + 1);
         }
         ok = false;
     }
@@ -637,9 +720,9 @@ static void WriteRow(TextSink *sink, const Tile *tiles, uint16_t width) {
 
         uint16_t count = (uint16_t)(column - runStart);
         if (count == 1) {
-            SinkPrintf(sink, "%u", tiles[runStart].id);
+            SinkPrintf(sink, "%u", (unsigned)tiles[runStart].id);
         } else {
-            SinkPrintf(sink, "%u*%u", tiles[runStart].id, count);
+            SinkPrintf(sink, "%u*%u", (unsigned)tiles[runStart].id, (unsigned)count);
         }
         if (column < width) {
             SinkPrintf(sink, " ");
@@ -649,9 +732,91 @@ static void WriteRow(TextSink *sink, const Tile *tiles, uint16_t width) {
     SinkPrintf(sink, "\n");
 }
 
+// True when x and y are integer pixel coordinates inside the section.
+static bool IsPointInRange(float x, float y, const Level *level) {
+    if (!isfinite(x) || !isfinite(y) || x < 0.0f || y < 0.0f) {
+        return false;
+    }
+    if (x >= (float)((int)level->width * LEVEL_TILE_PIXELS) ||
+        y >= (float)((int)level->height * LEVEL_TILE_PIXELS)) {
+        return false;
+    }
+    return x == truncf(x) && y == truncf(y);
+}
+
+// The serializer emits only what the parser accepts: 1..128 sizes, integer
+// in-bounds positions, caps 0 to 100, and kinds from the enum tables.
+static bool ValidateLevel(const Level *level, char *error, size_t cap) {
+    if (level->width < 1 || level->width > LEVEL_MAX_SIZE ||
+        level->height < 1 || level->height > LEVEL_MAX_SIZE) {
+        snprintf(error, cap, "level size %u x %u is out of range",
+                 (unsigned)level->width, (unsigned)level->height);
+        return false;
+    }
+
+    for (int layer = 0; layer < LEVEL_LAYER_COUNT; layer++) {
+        if (level->layers[layer].tiles == NULL) {
+            snprintf(error, cap, "level layer %s has no tiles", layerNames[layer]);
+            return false;
+        }
+    }
+
+    if (level->entityCount > 0 && level->entities == NULL) {
+        snprintf(error, cap, "level has no entity array");
+        return false;
+    }
+    for (uint16_t index = 0; index < level->entityCount; index++) {
+        const LevelEntity *entity = &level->entities[index];
+        if (entity->kind >= LEVEL_ENTITY_KIND_COUNT) {
+            snprintf(error, cap, "level entity %u has invalid kind %u",
+                     (unsigned)index, (unsigned)entity->kind);
+            return false;
+        }
+        if (!IsPointInRange(entity->x, entity->y, level)) {
+            snprintf(error, cap, "level entity %u is outside the section", (unsigned)index);
+            return false;
+        }
+    }
+
+    if (level->gateCount > 0 && level->gates == NULL) {
+        snprintf(error, cap, "level has no gate array");
+        return false;
+    }
+    for (uint16_t index = 0; index < level->gateCount; index++) {
+        const LevelGate *gate = &level->gates[index];
+        if (gate->faithCap > 100) {
+            snprintf(error, cap, "level gate %u cap %u is out of range",
+                     (unsigned)index, (unsigned)gate->faithCap);
+            return false;
+        }
+        if (!IsPointInRange(gate->x, gate->y, level)) {
+            snprintf(error, cap, "level gate %u is outside the section", (unsigned)index);
+            return false;
+        }
+    }
+
+    if (level->shrineCount > 0 && level->shrines == NULL) {
+        snprintf(error, cap, "level has no shrine array");
+        return false;
+    }
+    for (uint16_t index = 0; index < level->shrineCount; index++) {
+        const LevelShrine *shrine = &level->shrines[index];
+        if (shrine->kind >= LEVEL_SHRINE_KIND_COUNT) {
+            snprintf(error, cap, "level shrine %u has invalid kind %u",
+                     (unsigned)index, (unsigned)shrine->kind);
+            return false;
+        }
+        if (!IsPointInRange(shrine->x, shrine->y, level)) {
+            snprintf(error, cap, "level shrine %u is outside the section", (unsigned)index);
+            return false;
+        }
+    }
+    return true;
+}
+
 static void WriteLevel(TextSink *sink, const Level *level) {
     SinkPrintf(sink, "balin-level %d\n", LEVEL_VERSION);
-    SinkPrintf(sink, "size %u %u\n\n", level->width, level->height);
+    SinkPrintf(sink, "size %u %u\n\n", (unsigned)level->width, (unsigned)level->height);
 
     for (int layer = 0; layer < LEVEL_LAYER_COUNT; layer++) {
         SinkPrintf(sink, "%s\n", layerNames[layer]);
@@ -663,31 +828,28 @@ static void WriteLevel(TextSink *sink, const Level *level) {
 
     for (uint16_t index = 0; index < level->entityCount; index++) {
         const LevelEntity *entity = &level->entities[index];
-        if (entity->kind >= LEVEL_ENTITY_KIND_COUNT) {
-            sink->failed = true;
-            return;
-        }
         SinkPrintf(sink, "entity %s %.0f %.0f\n",
-                   entityKindNames[entity->kind], entity->x, entity->y);
+                   entityKindNames[entity->kind], (double)entity->x, (double)entity->y);
     }
 
     for (uint16_t index = 0; index < level->gateCount; index++) {
         const LevelGate *gate = &level->gates[index];
-        SinkPrintf(sink, "gate %.0f %.0f cap %u\n", gate->x, gate->y, gate->faithCap);
+        SinkPrintf(sink, "gate %.0f %.0f cap %u\n",
+                   (double)gate->x, (double)gate->y, (unsigned)gate->faithCap);
     }
 
     for (uint16_t index = 0; index < level->shrineCount; index++) {
         const LevelShrine *shrine = &level->shrines[index];
-        if (shrine->kind >= LEVEL_SHRINE_KIND_COUNT) {
-            sink->failed = true;
-            return;
-        }
         SinkPrintf(sink, "shrine %s %.0f %.0f\n",
-                   shrineKindNames[shrine->kind], shrine->x, shrine->y);
+                   shrineKindNames[shrine->kind], (double)shrine->x, (double)shrine->y);
     }
 }
 
 bool LevelSerialize(const Level *level, char *out, size_t cap, char *error, size_t errorCap) {
+    if (!ValidateLevel(level, error, errorCap)) {
+        return false;
+    }
+
     if (out == NULL || cap == 0) {
         snprintf(error, errorCap, "level text buffer is too small");
         return false;
@@ -705,9 +867,22 @@ bool LevelSerialize(const Level *level, char *out, size_t cap, char *error, size
 }
 
 bool LevelSave(const Level *level, const char *path, char *error, size_t errorCap) {
-    FILE *file = fopen(path, "w");
+    if (!ValidateLevel(level, error, errorCap)) {
+        return false;
+    }
+
+    // Write a sibling temporary file, then rename it over path. A failed
+    // write leaves the old file intact instead of a partial new one.
+    char temp[LEVEL_PATH_CAP];
+    int written = snprintf(temp, sizeof(temp), "%s.tmp", path);
+    if (written < 0 || (size_t)written >= sizeof(temp)) {
+        snprintf(error, errorCap, "%s: path is too long", path);
+        return false;
+    }
+
+    FILE *file = fopen(temp, "w");
     if (file == NULL) {
-        snprintf(error, errorCap, "%s: cannot open: %s", path, strerror(errno));
+        snprintf(error, errorCap, "%s: cannot open: %s", temp, strerror(errno));
         return false;
     }
 
@@ -716,12 +891,20 @@ bool LevelSave(const Level *level, const char *path, char *error, size_t errorCa
 
     if (sink.failed) {
         fclose(file);
+        remove(temp);
         snprintf(error, errorCap, "%s: cannot write level", path);
         return false;
     }
 
     if (fclose(file) != 0) {
+        remove(temp);
         snprintf(error, errorCap, "%s: cannot close: %s", path, strerror(errno));
+        return false;
+    }
+
+    if (rename(temp, path) != 0) {
+        remove(temp);
+        snprintf(error, errorCap, "%s: cannot rename from %s: %s", path, temp, strerror(errno));
         return false;
     }
     return true;

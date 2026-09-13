@@ -8,19 +8,21 @@
 #include "engine/arena.h"
 
 // Versioned text level format, per ADR-006 and ADR-008. One file per section:
-// a version header, a size, three tile layers as RLE rows, then entity, gate,
-// and shrine records. A section caps at 128x128 tiles of 32x32 pixels.
+// a version header, a size, three tile layers as RLE rows, then records
+// grouped by kind: entities, then gates, then shrines. A section caps at
+// 128x128 tiles of 32x32 pixels.
 //
 // The file carries tile ids only. Id 0 is an empty tile, and wall tiles with
 // a nonzero id get TILE_FLAG_SOLID at load. LevelParse pushes tile rows and
-// record arrays into the caller's arena. A failed parse may leave bytes in
-// the arena, but out is untouched. Reset the level arena on every section
-// load, per ADR-003. Malformed input fails fast with path and line, per
-// ADR-019.
+// record arrays into the caller's arena. Records of each kind are contiguous,
+// because the format groups them. A failed parse may leave bytes in the
+// arena, but out is untouched. Reset the level arena on every section load,
+// per ADR-003. Malformed input fails fast with path and line, per ADR-019.
 #define LEVEL_VERSION 1
 #define LEVEL_MAX_SIZE 128
 #define LEVEL_TILE_PIXELS 32
 #define LEVEL_ERROR_CAP 256
+#define LEVEL_PATH_CAP 1024
 
 typedef enum LevelLayerId {
     LEVEL_LAYER_FLOOR = 0,
@@ -98,11 +100,13 @@ typedef struct Level {
 // leaves out untouched.
 bool LevelParse(Level *out, const char *path, Arena *arena, char *error, size_t cap);
 
-// Writes the canonical text form to out. Fails when cap is too small.
+// Writes the canonical text form to out. Fails when cap is too small, when
+// the level fails validation, or when a kind is out of range.
 bool LevelSerialize(const Level *level, char *out, size_t cap, char *error, size_t errorCap);
 
-// Serializes level and writes it to path. Returns false with the reason on
-// failure.
+// Serializes level and writes it to path. Writes a temporary file next to
+// path and renames it into place, so a failed save leaves the old file
+// intact. Returns false with the reason on failure.
 bool LevelSave(const Level *level, const char *path, char *error, size_t errorCap);
 
 #endif
