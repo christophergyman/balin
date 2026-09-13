@@ -1,4 +1,4 @@
-#include "engine/tuning.h"
+#include "engine/core/tuning.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -10,7 +10,7 @@
 #include <string.h>
 #include <sys/stat.h>
 
-#include "engine/log.h"
+#include "engine/core/log.h"
 
 static const TuningSpec *specs;
 static size_t specCount;

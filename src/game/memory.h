@@ -1,7 +1,7 @@
 #ifndef MEMORY_H
 #define MEMORY_H
 
-#include "engine/arena.h"
+#include "engine/core/arena.h"
 
 // The four scoped arenas from ADR-003. Accessors return the live arena.
 void GameMemoryInit(void);

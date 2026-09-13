@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "engine/arena.h"
+#include "engine/core/arena.h"
 
 // Versioned text level format, per ADR-006 and ADR-008. One file per section:
 // a version header, a size, three tile layers as RLE rows, then records

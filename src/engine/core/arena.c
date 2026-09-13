@@ -1,8 +1,8 @@
-#include "engine/arena.h"
+#include "engine/core/arena.h"
 
 #include <stdint.h>
 
-#include "engine/log.h"
+#include "engine/core/log.h"
 
 static int IsPowerOfTwo(size_t value) {
     return value != 0 && (value & (value - 1)) == 0;

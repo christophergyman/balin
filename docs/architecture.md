@@ -73,16 +73,39 @@ assets/
   tuning.txt         reloadable tuning values
   log.cfg            reloadable log thresholds
 src/
-  main.c
-  engine/            time, input, render, audio, assets, arena, log, math
-  game/              world, ecs, systems/, states/, hud, inventory
-  tools/             editor/
+  main.c             composition root, main loop, wiring
+  engine/
+    core/            arena, log, time, tuning, later math
+    input/           action map and the raylib backend
+    render/          render target, camera, light mask
+    audio/           event queue, drone layers
+    assets/          sheet manifest, textures
+  game/
+    game.c           layer facade: init, tick, draw, snapshot
+    memory.c         scoped arenas, ADR-003
+    tuning_keys.c    game tuning schema
+    ecs/             entity storage, pools, queries
+    world/           level format, later sections and spawn
+    components/      component structs and pools
+    systems/         ordered system list, ADR-017
+    states/          boot, playing, bag, death, ending
+    player/          PlayerState and controller
+    enemies/         archetype tables and spawn
+    bag/             4x4 grid model
+    ui/              HUD, bag screen, ending overlay
+  tools/
+    overlay.c        F3 debug overlay
+    editor/          terrain, entity, gate modes
 tests/
   test_main.c        pure-logic tests
 docs/
   product-requirements-document.md
   architecture.md
 ```
+
+Folders land with their first file. `engine/core`, `engine/input`, `game/ecs`,
+`game/world`, and `game/systems` exist today. The rest are the homes for the
+modules named in this document and the PRD.
 
 ### 2.4 Frame budget
 
@@ -128,6 +151,7 @@ docs/
 | ADR-019 | Fail fast on malformed data | accepted | 2026-09-11 |
 | ADR-020 | Structured logfmt events, a flight recorder ring, and bug bundles | accepted | 2026-09-11 |
 | ADR-021 | Per-entity component masks in the ECS | accepted | 2026-09-12 |
+| ADR-022 | Subsystem folders inside engine and game | accepted | 2026-09-13 |
 
 ## 4. Decision records
 
@@ -854,6 +878,49 @@ Manifests and images reload when their modification times change in dev builds. 
 
 **Confirmation.** The mask iteration, stale handle, and destroy tests in `balin_tests`. The static assert fires if `ECS_MAX_COMPONENTS` grows past 64.
 
+### ADR-022: Subsystem folders inside engine and game
+
+- Status: accepted
+- Date: 2026-09-13
+
+**Context.** `src/engine` and `src/game` are flat. Engine holds eleven files and game twelve. The PRD adds the bag, the editor, combat, states, and world systems, so both folders will roughly triple. The planned modules are already named in the section 2.3 directory map, but nothing groups them physically, and a peer list of thirty files hides the subsystem boundaries that ADR-002 established at the top level.
+
+**Decision drivers**
+
+- Group files by subsystem, so a directory listing shows the architecture.
+- Keep the ADR-002 layer rule and its grep check intact.
+- Folders earn their place: create a folder when its first file lands.
+- The foundation and the ECS stay leaf modules with no same-layer includes from other folders.
+- One include root. No per-folder include directories.
+
+**Considered options**
+
+1. Keep both layers flat. Good: no path churn. Bad: the game root passes thirty files during M2.
+2. Second-level subsystem folders. Good: grouping and dependency direction stay visible. Bad: include paths gain a segment, and moving a file later churns includes again.
+3. A folder per module, for example `engine/arena/arena.c`. Good: maximum isolation. Bad: over-nesting for two-file modules and a deeper tree than the code needs.
+
+**Decision outcome.** We will group modules into second-level folders inside the existing layers:
+
+- `engine/core`: foundation modules that include no other engine folder: arena, log, time, tuning, and later math.
+- `engine/input`: the action map plus its raylib backend. Platform backends keep the `_raylib` suffix and sit beside the logic they implement, so the test link list stays visible.
+- `engine/render`, `engine/audio`, `engine/assets`: land with their first file.
+- `game/ecs`: entity storage, pools, and queries. It includes no gameplay folder.
+- `game/world`: the level format, and later sections and spawn.
+- `game/components`, `game/systems`, `game/states`, `game/player`, `game/enemies`, `game/bag`, `game/ui`: land with their first file.
+- The game layer root keeps the facade and app-level modules: `game.c`, `memory.c`, `tuning_keys.c`.
+- Includes stay rooted at `src/`: `#include "engine/core/arena.h"`.
+- The tools layer root keeps `overlay.c`; `tools/editor/` lands with the editor.
+
+**Consequences**
+
+- Positive: paths, the directory map, and headers use one subsystem vocabulary.
+- Positive: ctest enforces leaf rules for `engine/core` and `game/ecs`: each may include same-layer headers only from its own folder.
+- Positive: a new system file lands in `game/systems/` with no structural decision.
+- Negative: includes carry one more path segment, and moving a file to a new folder churns its includes. The compiler catches every miss.
+- Negative: the leaf rule list in `tests/check_layers.cmake` needs an entry when a leaf module lands. The script comments note this.
+
+**Confirmation.** `ctest` runs the extended check: the three ADR-002 layer rules plus the two ADR-022 leaf rules. A scratch copy with one violating include per rule makes the check fail with the file and the include.
+
 ## 5. Decision backlog
 
 Items not yet decided or deliberately deferred. Each can become an ADR when it is promoted.
@@ -903,3 +970,4 @@ Items not yet decided or deliberately deferred. Each can become an ADR when it i
 | 2026-09-11 | v1.1. ADR-020 recorded. Logging part of ADR-015 superseded. |
 | 2026-09-12 | v1.2. ADR-021 recorded. Mask layout of ADR-005 superseded. |
 | 2026-09-13 | v1.3. ADR-020 ring capture clarified: every event is formatted and ringed; thresholds gate the console and session file only. |
+| 2026-09-13 | v1.4. ADR-022 recorded. Directory map updated for subsystem folders. |

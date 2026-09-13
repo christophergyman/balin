@@ -10,13 +10,13 @@
 #include <unistd.h>
 #include <utime.h>
 
-#include "engine/arena.h"
-#include "engine/input.h"
-#include "engine/log.h"
-#include "engine/time.h"
-#include "engine/tuning.h"
-#include "game/ecs.h"
-#include "game/level.h"
+#include "engine/core/arena.h"
+#include "engine/input/input.h"
+#include "engine/core/log.h"
+#include "engine/core/time.h"
+#include "engine/core/tuning.h"
+#include "game/ecs/ecs.h"
+#include "game/world/level.h"
 #include "game/memory.h"
 #include "game/tuning_keys.h"
 

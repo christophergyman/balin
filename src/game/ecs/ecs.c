@@ -1,8 +1,8 @@
-#include "game/ecs.h"
+#include "game/ecs/ecs.h"
 
 #include <string.h>
 
-#include "engine/log.h"
+#include "engine/core/log.h"
 
 // The mask word stores one bit per component id, so the cap is 64.
 _Static_assert(ECS_MAX_COMPONENTS <= 64, "EcsMask holds 64 component ids");

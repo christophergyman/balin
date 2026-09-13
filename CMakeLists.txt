@@ -42,20 +42,28 @@ function(balin_flags target)
     endif()
 endfunction()
 
-set(BALIN_SOURCES
-    src/engine/arena.c
-    src/engine/input.c
-    src/engine/input_raylib.c
-    src/engine/log.c
-    src/engine/time.c
-    src/engine/tuning.c
-    src/main.c
-    src/game/ecs.c
-    src/game/game.c
-    src/game/level.c
+# Portable logic, shared by balin and balin_tests. Platform backends and
+# raylib-facing game code link into the game only, so tests stay headless.
+set(BALIN_COMMON_SOURCES
+    # engine
+    src/engine/core/arena.c
+    src/engine/core/log.c
+    src/engine/core/time.c
+    src/engine/core/tuning.c
+    src/engine/input/input.c
+    # game
+    src/game/ecs/ecs.c
     src/game/memory.c
-    src/game/systems.c
     src/game/tuning_keys.c
+    src/game/world/level.c
+)
+
+set(BALIN_SOURCES
+    src/main.c
+    src/engine/input/input_raylib.c
+    src/game/game.c
+    src/game/systems/systems.c
+    ${BALIN_COMMON_SOURCES}
 )
 
 if(BALIN_DEV)
@@ -72,15 +80,7 @@ balin_flags(balin)
 
 add_executable(balin_tests
     tests/test_main.c
-    src/engine/arena.c
-    src/engine/input.c
-    src/engine/log.c
-    src/engine/time.c
-    src/engine/tuning.c
-    src/game/ecs.c
-    src/game/level.c
-    src/game/memory.c
-    src/game/tuning_keys.c
+    ${BALIN_COMMON_SOURCES}
 )
 target_include_directories(balin_tests PRIVATE src)
 target_compile_definitions(balin_tests PRIVATE BALIN_DEV=$<BOOL:${BALIN_DEV}>)

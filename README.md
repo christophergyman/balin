@@ -48,9 +48,14 @@ contains `session.log`, `ring.log` (the last 2048 events at trace detail),
 ## Layout
 
 - `src/main.c`: composition root. Owns the window, the loop, and wiring.
-- `src/engine/`: engine modules. No includes from game or tools.
-- `src/game/`: game modules. May include engine.
+- `src/engine/`: engine modules, grouped by subsystem. No includes from game or tools.
+  - `core/`: arena, log, time, tuning, later math.
+  - `input/`: action map and raylib backend.
+- `src/game/`: game modules, grouped by subsystem. May include engine.
+  - `ecs/`: entity storage, pools, queries.
+  - `world/`: level format, later sections and spawn.
+  - `systems/`: ordered system list, ADR-017.
 - `src/tools/`: dev tools, built when `BALIN_DEV` is on. May include engine and game.
 - `tests/test_main.c`: assert-based tests.
-- `tests/check_layers.cmake`: layer rule check, run by ctest.
+- `tests/check_layers.cmake`: layer and leaf rule checks, run by ctest.
 - `vendor/raylib`: vendored raylib.

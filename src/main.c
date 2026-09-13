@@ -1,12 +1,12 @@
 #include "raylib.h"
 
-#include "engine/input.h"
-#include "engine/log.h"
-#include "engine/time.h"
-#include "engine/tuning.h"
+#include "engine/input/input.h"
+#include "engine/core/log.h"
+#include "engine/core/time.h"
+#include "engine/core/tuning.h"
 #include "game/game.h"
 #include "game/memory.h"
-#include "game/systems.h"
+#include "game/systems/systems.h"
 #include "game/tuning_keys.h"
 
 #if BALIN_DEV

@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 
-#include "game/ecs.h"
+#include "game/ecs/ecs.h"
 
 void GameInit(void);
 

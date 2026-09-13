@@ -1,6 +1,6 @@
-#include "game/systems.h"
+#include "game/systems/systems.h"
 
-#include "engine/input.h"
+#include "engine/input/input.h"
 #include "game/game.h"
 
 // Empty stubs mark each ADR-017 slot. The owning ticket fills the body.
