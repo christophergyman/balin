@@ -3,9 +3,11 @@
 #include "engine/input.h"
 #include "engine/log.h"
 #include "engine/time.h"
+#include "engine/tuning.h"
 #include "game/game.h"
 #include "game/memory.h"
 #include "game/systems.h"
+#include "game/tuning_keys.h"
 
 #if BALIN_DEV
 #include "tools/overlay.h"
@@ -25,6 +27,10 @@ int main(void) {
     InputInit();
 
     InitWindow(WINDOW_W, WINDOW_H, "Balin");
+
+    // ADR-018 lookup order: the executable folder first, then the repo working
+    // directory. Values load before GameInit so systems read them at boot.
+    TuningInit(TuningSpecs, TUNE_COUNT, "assets/tuning.txt", GetApplicationDirectory());
 
     GameInit();
     LogSetSnapshotWriter(GameWriteSnapshot);
@@ -63,6 +69,7 @@ int main(void) {
         EndDrawing();
 
         LogFlush();
+        TuningUpdate();
     }
 
     LOGI(LOG_CAT_BOOT, "Balin stopping");

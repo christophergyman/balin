@@ -48,11 +48,13 @@ set(BALIN_SOURCES
     src/engine/input_raylib.c
     src/engine/log.c
     src/engine/time.c
+    src/engine/tuning.c
     src/main.c
     src/game/ecs.c
     src/game/game.c
     src/game/memory.c
     src/game/systems.c
+    src/game/tuning_keys.c
 )
 
 if(BALIN_DEV)
@@ -73,11 +75,15 @@ add_executable(balin_tests
     src/engine/input.c
     src/engine/log.c
     src/engine/time.c
+    src/engine/tuning.c
     src/game/ecs.c
     src/game/memory.c
+    src/game/tuning_keys.c
 )
 target_include_directories(balin_tests PRIVATE src)
 target_compile_definitions(balin_tests PRIVATE BALIN_DEV=$<BOOL:${BALIN_DEV}>)
+# The drift test reads the real assets/tuning.txt against the real schema.
+target_compile_definitions(balin_tests PRIVATE BALIN_TEST_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
 balin_flags(balin_tests)
 
 # CMake defines NDEBUG in Release. Keep assert active in the test binary.

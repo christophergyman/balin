@@ -1,0 +1,6 @@
+# Balin tuning. key = value. Units in comments. Reloads on save, per ADR-008.
+# Every key in this file is required. There are no compiled defaults.
+
+# player
+player.moveSpeed = 120   # pixels per second
+player.radius = 10       # collision circle radius in pixels

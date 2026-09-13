@@ -6,14 +6,18 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
+#include <utime.h>
 
 #include "engine/arena.h"
 #include "engine/input.h"
 #include "engine/log.h"
 #include "engine/time.h"
+#include "engine/tuning.h"
 #include "game/ecs.h"
 #include "game/memory.h"
+#include "game/tuning_keys.h"
 
 static void WriteTextFile(const char *path, const char *text) {
     FILE *file = fopen(path, "w");
@@ -643,6 +647,163 @@ static void TestInputDropPending(void) {
     assert(!InputBuffered(ACTION_ATTACK));
 }
 
+typedef enum {
+    TEST_TUNE_SPEED = 0,
+    TEST_TUNE_HITS,
+    TEST_TUNE_FLAG,
+    TEST_TUNE_KEY_COUNT
+} TestTuneKey;
+
+static const TuningSpec TEST_TUNE_SPECS[TEST_TUNE_KEY_COUNT] = {
+    { "test.speed", TUNING_NUMBER },
+    { "test.hits", TUNING_INT },
+    { "test.flag", TUNING_BOOL },
+};
+
+static void TestTuningParse(void) {
+    mkdir("balin_test_tmp", 0755);
+    WriteTextFile("balin_test_tmp/tuning_ok.txt",
+                  "# comment\n"
+                  "\n"
+                  "  test.speed = 120.5   # pixels per second\n"
+                  "test.hits = -3\n"
+                  "test.flag = true\n");
+
+    double values[TEST_TUNE_KEY_COUNT];
+    char error[TUNING_ERROR_CAP];
+    assert(TuningParse(TEST_TUNE_SPECS, TEST_TUNE_KEY_COUNT,
+                       "balin_test_tmp/tuning_ok.txt", values, error, sizeof(error)));
+    assert(values[TEST_TUNE_SPEED] == 120.5);
+    assert(values[TEST_TUNE_HITS] == -3.0);
+    assert(values[TEST_TUNE_FLAG] == 1.0);
+}
+
+static void ExpectTuningError(const char *text, const char *expected) {
+    WriteTextFile("balin_test_tmp/tuning_bad.txt", text);
+
+    double values[TEST_TUNE_KEY_COUNT];
+    char error[TUNING_ERROR_CAP];
+    bool loaded = TuningParse(TEST_TUNE_SPECS, TEST_TUNE_KEY_COUNT,
+                              "balin_test_tmp/tuning_bad.txt", values, error, sizeof(error));
+    assert(!loaded);
+    assert(strstr(error, expected) != NULL);
+}
+
+static void TestTuningErrors(void) {
+    mkdir("balin_test_tmp", 0755);
+
+    ExpectTuningError("test.speed 120\n", ":1: expected key = value");
+    ExpectTuningError("\ntest.speed = fast\n", ":2: 'test.speed' expects a number");
+    ExpectTuningError("test.speed = 1\ntest.hits = 2.5\n", ":2: 'test.hits' expects an integer");
+    ExpectTuningError("test.speed = 1\ntest.hits = 1\ntest.flag = maybe\n",
+                      ":3: 'test.flag' expects true or false");
+    ExpectTuningError("test.speedy = 1\n", ":1: unknown key 'test.speedy'");
+    ExpectTuningError("test.speed = 1\ntest.speed = 2\n", ":2: duplicate key 'test.speed'");
+
+    // A missing key has no line, so the message names the key.
+    ExpectTuningError("test.speed = 1\ntest.hits = 1\n", "missing key 'test.flag'");
+
+    // A missing file fails on open.
+    double values[TEST_TUNE_KEY_COUNT];
+    char error[TUNING_ERROR_CAP];
+    assert(!TuningParse(TEST_TUNE_SPECS, TEST_TUNE_KEY_COUNT,
+                        "balin_test_tmp/tuning_absent.txt", values, error, sizeof(error)));
+    assert(strstr(error, "cannot open") != NULL);
+}
+
+static void TestTuningResolve(void) {
+    mkdir("balin_test_tmp", 0755);
+    mkdir("balin_test_tmp/tuning_exe", 0755);
+    mkdir("balin_test_tmp/tuning_cwd", 0755);
+
+    WriteTextFile("balin_test_tmp/tuning_exe/tuning.txt",
+                  "test.speed = 1\ntest.hits = 1\ntest.flag = false\n");
+    WriteTextFile("balin_test_tmp/tuning_cwd/tuning.txt",
+                  "test.speed = 2\ntest.hits = 1\ntest.flag = false\n");
+
+    char path[TUNING_PATH_CAP];
+
+    // The executable folder wins, with or without a trailing slash.
+    assert(TuningResolve("tuning.txt", "balin_test_tmp/tuning_exe", path, sizeof(path)));
+    assert(strcmp(path, "balin_test_tmp/tuning_exe/tuning.txt") == 0);
+
+    assert(TuningResolve("tuning.txt", "balin_test_tmp/tuning_exe/", path, sizeof(path)));
+    assert(strcmp(path, "balin_test_tmp/tuning_exe/tuning.txt") == 0);
+
+    // The working directory is the fallback.
+    assert(TuningResolve("balin_test_tmp/tuning_cwd/tuning.txt",
+                         "balin_test_tmp/tuning_missing", path, sizeof(path)));
+    assert(strcmp(path, "balin_test_tmp/tuning_cwd/tuning.txt") == 0);
+
+    assert(TuningResolve("balin_test_tmp/tuning_cwd/tuning.txt", NULL, path, sizeof(path)));
+    assert(strcmp(path, "balin_test_tmp/tuning_cwd/tuning.txt") == 0);
+
+    // Neither location has the file.
+    assert(!TuningResolve("balin_test_tmp/tuning_absent.txt",
+                          "balin_test_tmp/tuning_missing", path, sizeof(path)));
+    assert(path[0] == '\0');
+}
+
+static void TestTuningReload(void) {
+    mkdir("balin_test_tmp", 0755);
+    const char *path = "balin_test_tmp/tuning_reload.txt";
+    WriteTextFile(path, "test.speed = 1\ntest.hits = 1\ntest.flag = false\n");
+
+    TuningInit(TEST_TUNE_SPECS, TEST_TUNE_KEY_COUNT, path, NULL);
+    assert(strcmp(TuningPath(), path) == 0);
+    assert(TuningNumber(TEST_TUNE_SPEED) == 1.0);
+    assert(TuningInt(TEST_TUNE_HITS) == 1);
+    assert(TuningBool(TEST_TUNE_FLAG) == false);
+
+    WriteTextFile(path, "test.speed = 2.5\ntest.hits = 4\ntest.flag = true\n");
+
+    // Force a distinct mtime so the check does not depend on save speed.
+    struct utimbuf times;
+    times.actime = time(NULL) + 10;
+    times.modtime = times.actime;
+    assert(utime(path, &times) == 0);
+
+    TuningUpdate();
+    assert(TuningNumber(TEST_TUNE_SPEED) == 2.5);
+    assert(TuningInt(TEST_TUNE_HITS) == 4);
+    assert(TuningBool(TEST_TUNE_FLAG) == true);
+}
+
+static void TestTuningRealFile(void) {
+    char path[TUNING_PATH_CAP];
+    snprintf(path, sizeof(path), "%s/tuning.txt", BALIN_TEST_ASSETS_DIR);
+
+    double values[TUNE_COUNT];
+    char error[TUNING_ERROR_CAP];
+    assert(TuningParse(TuningSpecs, TUNE_COUNT, path, values, error, sizeof(error)));
+    assert(values[TUNE_PLAYER_MOVE_SPEED] > 0.0);
+    assert(values[TUNE_PLAYER_RADIUS] > 0.0);
+}
+
+static void TestTuningFatalExit(void) {
+    mkdir("balin_test_tmp", 0755);
+    WriteTextFile("balin_test_tmp/fatal_tuning.cfg", "# tests\ndefault = error\n");
+    WriteTextFile("balin_test_tmp/tuning_missing.txt", "test.speed = 1\ntest.hits = 1\n");
+
+    pid_t pid = fork();
+    assert(pid >= 0);
+
+    if (pid == 0) {
+        // Child: a missing key must stop the process with exit code 1.
+        (void)freopen("/dev/null", "w", stdout);
+        LogInit("balin_test_tmp/fatal_tuning.cfg", "balin_test_tmp/fatallogs",
+                "balin_test_tmp/fatalbugs");
+        TuningInit(TEST_TUNE_SPECS, TEST_TUNE_KEY_COUNT,
+                   "balin_test_tmp/tuning_missing.txt", NULL);
+        _exit(2); // Not reached when TuningInit exits.
+    }
+
+    int status = 0;
+    assert(waitpid(pid, &status, 0) == pid);
+    assert(WIFEXITED(status));
+    assert(WEXITSTATUS(status) == 1);
+}
+
 // ECS test components. Real component ids land with their system tickets.
 typedef enum {
     TEST_COMPONENT_POS = 0,
@@ -962,6 +1123,13 @@ int main(void) {
     TestInputBufferOnlyAttackAndDash();
     TestInputInvalidAction();
     TestInputDropPending();
+
+    TestTuningParse();
+    TestTuningErrors();
+    TestTuningResolve();
+    TestTuningReload();
+    TestTuningRealFile();
+    TestTuningFatalExit();
 
     TestEcsCreate();
     TestEcsDestroyDeferred();
