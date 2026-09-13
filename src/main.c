@@ -1,5 +1,6 @@
 #include "raylib.h"
 
+#include "engine/input.h"
 #include "engine/log.h"
 #include "engine/time.h"
 #include "game/game.h"
@@ -21,6 +22,7 @@ int main(void) {
     LOGI(LOG_CAT_BOOT, "Balin starting");
 
     GameMemoryInit();
+    InputInit();
 
     InitWindow(WINDOW_W, WINDOW_H, "Balin");
 
@@ -41,6 +43,10 @@ int main(void) {
 #endif
 
         GameMemoryResetFrame();
+
+        // One sample per rendered frame, before the fixed tick loop, per
+        // ADR-004. Frames that owe no tick still latch their edges.
+        InputPollRaylib();
 
         int steps = ClockBeginFrame(&clock, GetFrameTime());
         for (int i = 0; i < steps; i++) {

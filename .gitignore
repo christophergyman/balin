@@ -2,7 +2,6 @@
 .DS_Store
 build/
 .cache
-output/*
-# Runtime save data
-output/data/
-temp/*
+output/
+temp/
+balin_test_tmp/

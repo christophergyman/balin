@@ -1,12 +1,15 @@
 #include "game/systems.h"
 
+#include "engine/input.h"
 #include "game/game.h"
 
 // Empty stubs mark each ADR-017 slot. The owning ticket fills the body.
 // The call order in GameTick is the contract.
 
 static void SystemInput(void) {
-    // 1. Input snapshot applied, buffers ticked. TODO(BAL-13)
+    // 1. Input snapshot applied, buffers ticked. The player controller reads
+    // the snapshot in BAL-20 and consumes the dash and attack buffers later.
+    InputBeginTick();
 }
 
 static void SystemAI(void) {

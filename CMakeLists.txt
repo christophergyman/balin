@@ -44,6 +44,8 @@ endfunction()
 
 set(BALIN_SOURCES
     src/engine/arena.c
+    src/engine/input.c
+    src/engine/input_raylib.c
     src/engine/log.c
     src/engine/time.c
     src/main.c
@@ -68,6 +70,7 @@ balin_flags(balin)
 add_executable(balin_tests
     tests/test_main.c
     src/engine/arena.c
+    src/engine/input.c
     src/engine/log.c
     src/engine/time.c
     src/game/ecs.c

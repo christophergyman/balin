@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include "engine/arena.h"
+#include "engine/input.h"
 #include "engine/log.h"
 #include "engine/time.h"
 #include "game/ecs.h"
@@ -398,6 +399,250 @@ static void TestClockCatchUpCap(void) {
     assert(ClockBeginFrame(&clock, 1.0 / 60.0) == 1);
 }
 
+static void TestInputHeldAndEdges(void) {
+    InputInit();
+
+    uint32_t bit = ACTION_BIT(ACTION_MOVE_UP);
+    InputFrame press = { bit, bit, 0 };
+    InputBeginFrame(&press);
+    InputBeginTick();
+    assert(InputHeld(ACTION_MOVE_UP));
+    assert(InputPressed(ACTION_MOVE_UP));
+    assert(!InputReleased(ACTION_MOVE_UP));
+
+    // The press edge does not repeat on the next tick.
+    InputFrame hold = { bit, 0, 0 };
+    InputBeginFrame(&hold);
+    InputBeginTick();
+    assert(InputHeld(ACTION_MOVE_UP));
+    assert(!InputPressed(ACTION_MOVE_UP));
+    assert(!InputReleased(ACTION_MOVE_UP));
+
+    InputFrame release = { 0, 0, bit };
+    InputBeginFrame(&release);
+    InputBeginTick();
+    assert(!InputHeld(ACTION_MOVE_UP));
+    assert(!InputPressed(ACTION_MOVE_UP));
+    assert(InputReleased(ACTION_MOVE_UP));
+
+    // The release edge does not repeat either.
+    InputFrame idle = { 0, 0, 0 };
+    InputBeginFrame(&idle);
+    InputBeginTick();
+    assert(!InputHeld(ACTION_MOVE_UP));
+    assert(!InputReleased(ACTION_MOVE_UP));
+}
+
+static void TestInputTapWithinOneFrame(void) {
+    InputInit();
+
+    // A press and release can land between two samples. Both edges survive
+    // even though held stays false.
+    uint32_t bit = ACTION_BIT(ACTION_ATTACK);
+    InputFrame tap = { 0, bit, bit };
+    InputBeginFrame(&tap);
+    InputBeginTick();
+
+    assert(!InputHeld(ACTION_ATTACK));
+    assert(InputPressed(ACTION_ATTACK));
+    assert(InputReleased(ACTION_ATTACK));
+    assert(InputBuffered(ACTION_ATTACK));
+}
+
+static void TestInputEdgeLatchesAcrossFrames(void) {
+    InputInit();
+
+    // 120 FPS: the press frame owes no tick. The latch carries the edge into
+    // the next frame's tick.
+    uint32_t bit = ACTION_BIT(ACTION_DASH);
+    InputFrame press = { bit, bit, 0 };
+    InputFrame hold = { bit, 0, 0 };
+    InputBeginFrame(&press);
+    InputBeginFrame(&hold);
+    InputBeginTick();
+
+    assert(InputPressed(ACTION_DASH));
+    assert(InputHeld(ACTION_DASH));
+    assert(InputBuffered(ACTION_DASH));
+
+    // The latch is consumed: the following tick has no edge.
+    InputBeginFrame(&hold);
+    InputBeginTick();
+    assert(!InputPressed(ACTION_DASH));
+    assert(InputHeld(ACTION_DASH));
+}
+
+// Simulates main.c: one frame sample, then the fixed steps the clock owes,
+// each with an input tick. The action is held from pressFrame to releaseFrame.
+static void CountActionEdges(double frameSeconds, int frames, int pressFrame, int releaseFrame,
+                             int *pressedTicks, int *releasedTicks) {
+    InputInit();
+    Clock clock;
+    ClockInit(&clock);
+    *pressedTicks = 0;
+    *releasedTicks = 0;
+
+    for (int frame = 0; frame < frames; frame++) {
+        uint32_t bit = ACTION_BIT(ACTION_ATTACK);
+        InputFrame sample = { 0, 0, 0 };
+        if (frame >= pressFrame && frame < releaseFrame) {
+            sample.held |= bit;
+        }
+        if (frame == pressFrame) {
+            sample.pressed |= bit;
+        }
+        if (frame == releaseFrame) {
+            sample.released |= bit;
+        }
+        InputBeginFrame(&sample);
+
+        int steps = ClockBeginFrame(&clock, frameSeconds);
+        for (int step = 0; step < steps; step++) {
+            ClockBeginTick(&clock);
+            InputBeginTick();
+            if (InputPressed(ACTION_ATTACK)) {
+                (*pressedTicks)++;
+            }
+            if (InputReleased(ACTION_ATTACK)) {
+                (*releasedTicks)++;
+            }
+        }
+    }
+}
+
+static void TestInputEdgesAtAnyRenderRate(void) {
+    // A press and release must land on exactly one tick at each render rate,
+    // including rates that do not divide the tick.
+    int pressed = 0;
+    int released = 0;
+
+    CountActionEdges(1.0 / 30.0, 60, 5, 30, &pressed, &released);
+    assert(pressed == 1);
+    assert(released == 1);
+
+    CountActionEdges(1.0 / 60.0, 120, 10, 60, &pressed, &released);
+    assert(pressed == 1);
+    assert(released == 1);
+
+    CountActionEdges(1.0 / 120.0, 240, 20, 120, &pressed, &released);
+    assert(pressed == 1);
+    assert(released == 1);
+
+    CountActionEdges(1.0 / 144.0, 288, 24, 144, &pressed, &released);
+    assert(pressed == 1);
+    assert(released == 1);
+}
+
+static void TestInputBufferWindow(void) {
+    InputInit();
+
+    uint32_t bit = ACTION_BIT(ACTION_ATTACK);
+    InputFrame press = { bit, bit, 0 };
+    InputFrame hold = { bit, 0, 0 };
+
+    InputBeginFrame(&press);
+    InputBeginTick();
+    assert(InputBuffered(ACTION_ATTACK));
+
+    // Valid through tick six: the press tick plus five.
+    for (int tick = 1; tick < INPUT_BUFFER_TICKS; tick++) {
+        InputBeginFrame(&hold);
+        InputBeginTick();
+        assert(InputBuffered(ACTION_ATTACK));
+    }
+
+    // Expired on tick seven.
+    InputBeginFrame(&hold);
+    InputBeginTick();
+    assert(!InputBuffered(ACTION_ATTACK));
+    assert(!InputConsumeBuffered(ACTION_ATTACK));
+}
+
+static void TestInputBufferConsume(void) {
+    InputInit();
+
+    uint32_t bit = ACTION_BIT(ACTION_DASH);
+    InputFrame press = { bit, bit, 0 };
+    InputFrame release = { 0, 0, bit };
+    InputFrame idle = { 0, 0, 0 };
+
+    InputBeginFrame(&press);
+    InputBeginTick();
+
+    // A fresh press is consumable on its own tick, and only once.
+    assert(InputConsumeBuffered(ACTION_DASH));
+    assert(!InputBuffered(ACTION_DASH));
+    assert(!InputConsumeBuffered(ACTION_DASH));
+
+    // Wait out the release, then press again to re-arm.
+    InputBeginFrame(&release);
+    InputBeginTick();
+    InputBeginFrame(&idle);
+    InputBeginTick();
+    InputBeginFrame(&press);
+    InputBeginTick();
+    assert(InputConsumeBuffered(ACTION_DASH));
+    assert(!InputConsumeBuffered(ACTION_DASH));
+}
+
+static void TestInputBufferOnlyAttackAndDash(void) {
+    Action others[] = {
+        ACTION_MOVE_UP,
+        ACTION_MOVE_DOWN,
+        ACTION_MOVE_LEFT,
+        ACTION_MOVE_RIGHT,
+        ACTION_SMITE,
+        ACTION_BAG,
+        ACTION_INTERACT,
+    };
+
+    for (size_t index = 0; index < sizeof(others) / sizeof(others[0]); index++) {
+        InputInit();
+
+        uint32_t bit = ACTION_BIT(others[index]);
+        InputFrame press = { bit, bit, 0 };
+        InputBeginFrame(&press);
+        InputBeginTick();
+
+        assert(!InputBuffered(others[index]));
+        assert(!InputConsumeBuffered(others[index]));
+    }
+}
+
+static void TestInputInvalidAction(void) {
+    InputInit();
+
+    // Out-of-range ids return false instead of indexing out of bounds.
+    assert(!InputHeld((Action)ACTION_COUNT));
+    assert(!InputPressed((Action)ACTION_COUNT));
+    assert(!InputReleased((Action)ACTION_COUNT));
+    assert(!InputBuffered((Action)ACTION_COUNT));
+    assert(!InputConsumeBuffered((Action)ACTION_COUNT));
+
+    assert(!InputHeld((Action)-1));
+    assert(!InputBuffered((Action)-1));
+    assert(!InputConsumeBuffered((Action)-1));
+}
+
+static void TestInputDropPending(void) {
+    InputInit();
+
+    uint32_t bit = ACTION_BIT(ACTION_ATTACK);
+    InputFrame press = { bit, bit, 0 };
+    InputBeginFrame(&press);
+    InputBeginTick();
+    assert(InputBuffered(ACTION_ATTACK));
+
+    // Pause enter: a latched edge and a live buffer are dropped, so resume
+    // does not replay them.
+    InputBeginFrame(&press);
+    InputDropPending();
+    InputBeginTick();
+    assert(!InputPressed(ACTION_ATTACK));
+    assert(!InputHeld(ACTION_ATTACK));
+    assert(!InputBuffered(ACTION_ATTACK));
+}
+
 // ECS test components. Real component ids land with their system tickets.
 typedef enum {
     TEST_COMPONENT_POS = 0,
@@ -707,6 +952,16 @@ int main(void) {
     TestClockAlpha();
     TestClockFrameRateIndependence();
     TestClockCatchUpCap();
+
+    TestInputHeldAndEdges();
+    TestInputTapWithinOneFrame();
+    TestInputEdgeLatchesAcrossFrames();
+    TestInputEdgesAtAnyRenderRate();
+    TestInputBufferWindow();
+    TestInputBufferConsume();
+    TestInputBufferOnlyAttackAndDash();
+    TestInputInvalidAction();
+    TestInputDropPending();
 
     TestEcsCreate();
     TestEcsDestroyDeferred();
