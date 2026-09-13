@@ -14,6 +14,8 @@ Linear is the tracker. Use team **Balin-game**. Before doing anything Linear-rel
 - Views: **Active work** (grouped by milestone) and **Playtest queue**.
 
 ## Rules for agents
+- Never commit, push, or merge without explicit confirmation from the user. Prepare changes and ask first.
+- Never make product decisions. Check the docs first, especially `docs/product-requirements-document.md` and `docs/architecture.md`. If the docs do not answer, ask the user.
 - Do not use skills from the harness. Do all Linear work with the Linear MCP tools directly.
 - When creating a ticket, set: team Balin-game, project Balin: Demo, one milestone, one Area label, one Type label.
 - Do not create or change projects, milestones, labels, or statuses. Ask cman first.
