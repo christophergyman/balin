@@ -22,6 +22,10 @@ void GameMemoryInit(void) {
     ArenaInit(&frameArena, "frame", frameMemory, sizeof(frameMemory));
 }
 
+void GameMemoryResetLevel(void) {
+    ArenaReset(&levelArena);
+}
+
 void GameMemoryResetRun(void) {
     ArenaReset(&runArena);
 }

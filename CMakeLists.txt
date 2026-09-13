@@ -52,6 +52,7 @@ set(BALIN_SOURCES
     src/main.c
     src/game/ecs.c
     src/game/game.c
+    src/game/level.c
     src/game/memory.c
     src/game/systems.c
     src/game/tuning_keys.c
@@ -77,6 +78,7 @@ add_executable(balin_tests
     src/engine/time.c
     src/engine/tuning.c
     src/game/ecs.c
+    src/game/level.c
     src/game/memory.c
     src/game/tuning_keys.c
 )

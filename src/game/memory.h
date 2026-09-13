@@ -5,6 +5,7 @@
 
 // The four scoped arenas from ADR-003. Accessors return the live arena.
 void GameMemoryInit(void);
+void GameMemoryResetLevel(void);
 void GameMemoryResetRun(void);
 void GameMemoryResetFrame(void);
 

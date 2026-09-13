@@ -16,6 +16,7 @@
 #include "engine/time.h"
 #include "engine/tuning.h"
 #include "game/ecs.h"
+#include "game/level.h"
 #include "game/memory.h"
 #include "game/tuning_keys.h"
 
@@ -319,6 +320,10 @@ static void TestGameMemory(void) {
     assert(ArenaUsed(GameArenaRun()) == 0);
     assert(ArenaUsed(GameArenaAsset()) == 64);
     assert(ArenaUsed(GameArenaLevel()) == 64);
+
+    GameMemoryResetLevel();
+    assert(ArenaUsed(GameArenaLevel()) == 0);
+    assert(ArenaUsed(GameArenaAsset()) == 64);
 }
 
 static int TicksFor(int frames, double frameSeconds) {
@@ -1101,6 +1106,280 @@ static void TestEcsCounts(void) {
     assert(EcsComponentCount(&world, TEST_COMPONENT_POS) == 1);
 }
 
+// Level format tests, per BAL-15 and ADR-006, ADR-008.
+
+#define LEVEL_FIXTURE \
+    "# small section fixture\n" \
+    "balin-level 1\n" \
+    "size 4 2\n" \
+    "\n" \
+    "floor\n" \
+    "1*4\n" \
+    "2 3*3\n" \
+    "wall\n" \
+    "0*4\n" \
+    "9*2 0*2\n" \
+    "decor\n" \
+    "0*4\n" \
+    "7 0 0 0\n" \
+    "\n" \
+    "entity player 16 16\n" \
+    "entity crawler 48 16\n" \
+    "entity apple 80 16\n" \
+    "gate 96 16 cap 70\n" \
+    "shrine small 112 16\n"
+
+#define LEVEL_VALID_PREFIX \
+    "balin-level 1\n" \
+    "size 4 2\n" \
+    "floor\n0*4\n0*4\n" \
+    "wall\n0*4\n0*4\n" \
+    "decor\n0*4\n0*4\n"
+
+static void AssertLevelsEqual(const Level *first, const Level *second) {
+    assert(first->width == second->width);
+    assert(first->height == second->height);
+
+    for (int layer = 0; layer < LEVEL_LAYER_COUNT; layer++) {
+        size_t bytes = (size_t)first->width * first->height * sizeof(Tile);
+        assert(memcmp(first->layers[layer].tiles, second->layers[layer].tiles, bytes) == 0);
+    }
+
+    assert(first->entityCount == second->entityCount);
+    if (first->entityCount > 0) {
+        assert(memcmp(first->entities, second->entities,
+                      (size_t)first->entityCount * sizeof(LevelEntity)) == 0);
+    }
+
+    assert(first->gateCount == second->gateCount);
+    if (first->gateCount > 0) {
+        assert(memcmp(first->gates, second->gates,
+                      (size_t)first->gateCount * sizeof(LevelGate)) == 0);
+    }
+
+    assert(first->shrineCount == second->shrineCount);
+    if (first->shrineCount > 0) {
+        assert(memcmp(first->shrines, second->shrines,
+                      (size_t)first->shrineCount * sizeof(LevelShrine)) == 0);
+    }
+}
+
+static void TestLevelRoundTrip(void) {
+    mkdir("balin_test_tmp", 0755);
+    WriteTextFile("balin_test_tmp/level_fixture.lvl", LEVEL_FIXTURE);
+
+    static _Alignas(16) unsigned char storage[64 * 1024];
+    Arena arena;
+    ArenaInit(&arena, "test-level", storage, sizeof(storage));
+
+    char error[LEVEL_ERROR_CAP];
+    Level first;
+    assert(LevelParse(&first, "balin_test_tmp/level_fixture.lvl", &arena, error, sizeof(error)));
+    assert(first.width == 4 && first.height == 2);
+
+    // Records load with their kinds and positions.
+    assert(first.entityCount == 3);
+    assert(first.entities[0].kind == LEVEL_ENTITY_PLAYER);
+    assert(first.entities[0].x == 16.0f && first.entities[0].y == 16.0f);
+    assert(first.entities[1].kind == LEVEL_ENTITY_CRAWLER);
+    assert(first.entities[2].kind == LEVEL_ENTITY_APPLE);
+    assert(first.gateCount == 1);
+    assert(first.gates[0].faithCap == 70);
+    assert(first.shrineCount == 1);
+    assert(first.shrines[0].kind == LEVEL_SHRINE_SMALL);
+
+    // RLE expands to full rows.
+    const Tile *floor = first.layers[LEVEL_LAYER_FLOOR].tiles;
+    assert(floor[0].id == 1 && floor[3].id == 1);
+    assert(floor[4].id == 2);
+    assert(floor[5].id == 3 && floor[7].id == 3);
+
+    // Wall tiles are solid; floor and decor tiles are not.
+    assert(first.layers[LEVEL_LAYER_WALL].tiles[0].id == 0);
+    assert(first.layers[LEVEL_LAYER_WALL].tiles[0].flags == 0);
+    assert(first.layers[LEVEL_LAYER_WALL].tiles[4].id == 9);
+    assert(first.layers[LEVEL_LAYER_WALL].tiles[4].flags == TILE_FLAG_SOLID);
+    assert(first.layers[LEVEL_LAYER_WALL].tiles[5].flags == TILE_FLAG_SOLID);
+    assert(first.layers[LEVEL_LAYER_WALL].tiles[6].id == 0);
+    assert(first.layers[LEVEL_LAYER_WALL].tiles[6].flags == 0);
+    assert(first.layers[LEVEL_LAYER_FLOOR].tiles[0].flags == 0);
+    assert(first.layers[LEVEL_LAYER_DECOR].tiles[4].id == 7);
+
+    // Serialize, reload, and compare structure.
+    static char text[64 * 1024];
+    assert(LevelSerialize(&first, text, sizeof(text), error, sizeof(error)));
+    WriteTextFile("balin_test_tmp/level_roundtrip.lvl", text);
+
+    Level second;
+    assert(LevelParse(&second, "balin_test_tmp/level_roundtrip.lvl", &arena, error, sizeof(error)));
+    AssertLevelsEqual(&first, &second);
+
+    // The canonical text is stable across a second pass.
+    static char textAgain[64 * 1024];
+    assert(LevelSerialize(&second, textAgain, sizeof(textAgain), error, sizeof(error)));
+    assert(strcmp(text, textAgain) == 0);
+
+    // Runs stay compressed, and records keep their exact form.
+    assert(strstr(text, "1*4") != NULL);
+    assert(strstr(text, "9*2") != NULL);
+    assert(strstr(text, "entity player 16 16") != NULL);
+    assert(strstr(text, "gate 96 16 cap 70") != NULL);
+    assert(strstr(text, "shrine small 112 16") != NULL);
+
+    // LevelSave writes the same text as LevelSerialize.
+    assert(LevelSave(&first, "balin_test_tmp/level_saved.lvl", error, sizeof(error)));
+    char saved[64 * 1024];
+    ReadTextFile("balin_test_tmp/level_saved.lvl", saved, sizeof(saved));
+    assert(strcmp(saved, text) == 0);
+
+    Level third;
+    assert(LevelParse(&third, "balin_test_tmp/level_saved.lvl", &arena, error, sizeof(error)));
+    AssertLevelsEqual(&first, &third);
+
+    // A tiny buffer fails with a reason instead of truncating.
+    char small[16];
+    assert(!LevelSerialize(&first, small, sizeof(small), error, sizeof(error)));
+    assert(strstr(error, "needs more than") != NULL);
+}
+
+static void ExpectLevelError(const char *text, const char *expected) {
+    mkdir("balin_test_tmp", 0755);
+    WriteTextFile("balin_test_tmp/level_bad.lvl", text);
+
+    static _Alignas(16) unsigned char storage[64 * 1024];
+    Arena arena;
+    ArenaInit(&arena, "test-level", storage, sizeof(storage));
+
+    Level level;
+    char error[LEVEL_ERROR_CAP];
+    bool loaded = LevelParse(&level, "balin_test_tmp/level_bad.lvl", &arena, error, sizeof(error));
+    if (loaded) {
+        fprintf(stderr, "level_bad.lvl parsed, expected error '%s'\n", expected);
+        assert(!loaded);
+    }
+    if (strstr(error, expected) == NULL) {
+        fprintf(stderr, "expected '%s', got '%s'\n", expected, error);
+        assert(strstr(error, expected) != NULL);
+    }
+}
+
+static void TestLevelErrors(void) {
+    // Header and size checks keep the line number.
+    ExpectLevelError("nope 1\nsize 4 2\n", ":1: expected 'balin-level'");
+    ExpectLevelError("balin-level 2\n", ":1: version 2 is not supported (expected 1)");
+    ExpectLevelError("balin-level 1\nsize 0 2\n", ":2: size must be 1 to 128, got 0 x 2");
+    ExpectLevelError("balin-level 1\nsize 129 2\n", "size must be 1 to 128, got 129 x 2");
+    ExpectLevelError("balin-level 1\nsize 4 2 junk\n", "unexpected trailing tokens");
+    ExpectLevelError("balin-level 1\nsize 4 2\nentity player 1 1\n", "expected 'floor' layer");
+
+    // Truncated files report what was still expected.
+    ExpectLevelError("balin-level 1\n", "unexpected end of file, expected 'size'");
+    ExpectLevelError("balin-level 1\nsize 4 2\nfloor\n0*4\n",
+                     "unexpected end of file, expected 'floor' layer row 2");
+
+    // Malformed rows keep their line.
+    ExpectLevelError("balin-level 1\nsize 4 2\nfloor\n0*3\n0*4\nwall\n0*4\n0*4\ndecor\n0*4\n0*4\n",
+                     ":4: row has 3 tiles, expected 4");
+    ExpectLevelError("balin-level 1\nsize 4 2\nfloor\n0*0\n0*4\nwall\n0*4\n0*4\ndecor\n0*4\n0*4\n",
+                     "bad run '0*0'");
+    ExpectLevelError("balin-level 1\nsize 4 2\nfloor\n0*5\n0*4\nwall\n0*4\n0*4\ndecor\n0*4\n0*4\n",
+                     "run count 5 is larger than the 4 tile width");
+    ExpectLevelError("balin-level 1\nsize 4 2\nfloor\ntwo\n0*4\nwall\n0*4\n0*4\ndecor\n0*4\n0*4\n",
+                     "bad run 'two'");
+
+    // Record checks.
+    ExpectLevelError(LEVEL_VALID_PREFIX "entity dragon 1 1\n", "unknown entity kind 'dragon'");
+    ExpectLevelError(LEVEL_VALID_PREFIX "opaque 1 2\n", "unknown record 'opaque'");
+    ExpectLevelError(LEVEL_VALID_PREFIX "shrine huge 1 1\n", "unknown shrine kind 'huge'");
+    ExpectLevelError(LEVEL_VALID_PREFIX "gate 1 1 cap 101\n", "gate cap must be 0 to 100, got 101");
+    ExpectLevelError(LEVEL_VALID_PREFIX "gate 1 1 limit 70\n", "gate expects 'cap', got 'limit'");
+    ExpectLevelError(LEVEL_VALID_PREFIX "gate 1 1 cap\n", "gate expects x y cap N");
+    ExpectLevelError(LEVEL_VALID_PREFIX "entity player x 1\n", "bad coordinate 'x'");
+    ExpectLevelError(LEVEL_VALID_PREFIX "entity player 1 y\n", "bad coordinate 'y'");
+    ExpectLevelError(LEVEL_VALID_PREFIX "entity player 128 1\n", "outside the 128x64 section");
+    ExpectLevelError(LEVEL_VALID_PREFIX "entity player 1 -1\n", "outside the 128x64 section");
+    ExpectLevelError(LEVEL_VALID_PREFIX "entity player 1 1 9\n", "entity expects kind x y");
+
+    // A failed parse leaves out untouched.
+    static _Alignas(16) unsigned char storage[4096];
+    Arena arena;
+    ArenaInit(&arena, "test-level", storage, sizeof(storage));
+    char error[LEVEL_ERROR_CAP];
+    Level untouched;
+    untouched.width = 99;
+    untouched.height = 99;
+    WriteTextFile("balin_test_tmp/level_bad2.lvl", "balin-level 2\n");
+    assert(!LevelParse(&untouched, "balin_test_tmp/level_bad2.lvl", &arena, error, sizeof(error)));
+    assert(untouched.width == 99 && untouched.height == 99);
+
+    // A missing file fails on open.
+    Level level;
+    assert(!LevelParse(&level, "balin_test_tmp/level_absent.lvl", &arena, error, sizeof(error)));
+    assert(strstr(error, "cannot open") != NULL);
+}
+
+static void TestLevelArena(void) {
+    mkdir("balin_test_tmp", 0755);
+    WriteTextFile("balin_test_tmp/level_fixture.lvl", LEVEL_FIXTURE);
+
+    static _Alignas(16) unsigned char storage[64 * 1024];
+    Arena arena;
+    ArenaInit(&arena, "test-level", storage, sizeof(storage));
+
+    char error[LEVEL_ERROR_CAP];
+    Level level;
+    assert(LevelParse(&level, "balin_test_tmp/level_fixture.lvl", &arena, error, sizeof(error)));
+
+    size_t used = ArenaUsed(&arena);
+    assert(used > 0);
+    assert(used <= sizeof(storage));
+
+    // Every pointer references the arena block.
+    unsigned char *base = storage;
+    assert((unsigned char *)level.layers[LEVEL_LAYER_FLOOR].tiles >= base);
+    assert((unsigned char *)level.layers[LEVEL_LAYER_DECOR].tiles < base + sizeof(storage));
+    assert((unsigned char *)level.entities >= base);
+    assert((unsigned char *)level.gates >= base);
+    assert((unsigned char *)level.shrines >= base);
+
+    // Reset and parse again: the same bytes are reused.
+    ArenaReset(&arena);
+    Level again;
+    assert(LevelParse(&again, "balin_test_tmp/level_fixture.lvl", &arena, error, sizeof(error)));
+    assert(ArenaUsed(&arena) == used);
+    assert(again.layers[LEVEL_LAYER_WALL].tiles[4].flags == TILE_FLAG_SOLID);
+}
+
+static void TestLevelMaxSize(void) {
+    mkdir("balin_test_tmp", 0755);
+
+    FILE *file = fopen("balin_test_tmp/level_max.lvl", "w");
+    assert(file != NULL);
+    fputs("balin-level 1\nsize 128 128\n", file);
+    for (int layer = 0; layer < LEVEL_LAYER_COUNT; layer++) {
+        fputs(layer == LEVEL_LAYER_FLOOR ? "floor\n" :
+              layer == LEVEL_LAYER_WALL ? "wall\n" : "decor\n", file);
+        for (int row = 0; row < 128; row++) {
+            fputs(layer == LEVEL_LAYER_WALL ? "1*128\n" : "0*128\n", file);
+        }
+    }
+    fclose(file);
+
+    static _Alignas(16) unsigned char storage[256 * 1024];
+    Arena arena;
+    ArenaInit(&arena, "test-level", storage, sizeof(storage));
+
+    char error[LEVEL_ERROR_CAP];
+    Level level;
+    assert(LevelParse(&level, "balin_test_tmp/level_max.lvl", &arena, error, sizeof(error)));
+    assert(level.width == 128 && level.height == 128);
+    assert(level.layers[LEVEL_LAYER_WALL].tiles[0].flags == TILE_FLAG_SOLID);
+    assert(level.layers[LEVEL_LAYER_WALL].tiles[128 * 128 - 1].flags == TILE_FLAG_SOLID);
+    assert(level.layers[LEVEL_LAYER_FLOOR].tiles[0].id == 0);
+    assert(level.layers[LEVEL_LAYER_FLOOR].tiles[0].flags == 0);
+    assert(level.entityCount == 0 && level.gateCount == 0 && level.shrineCount == 0);
+}
+
 int main(void) {
     TestScaffold();
     TestLog();
@@ -1139,6 +1418,11 @@ int main(void) {
     TestEcsDestroyDuringQuery();
     TestEcsPool();
     TestEcsCounts();
+
+    TestLevelRoundTrip();
+    TestLevelErrors();
+    TestLevelArena();
+    TestLevelMaxSize();
 
     printf("balin_tests: all tests passed\n");
     return 0;
