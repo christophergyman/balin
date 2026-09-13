@@ -4,6 +4,13 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
+
+// Flight recorder capacity, per ADR-020. The ring keeps the last 2048 events
+// at trace detail, independent of thresholds. Each slot holds one event of up
+// to 255 bytes plus a NUL terminator; longer lines are truncated.
+#define LOG_RING_COUNT 2048
+#define LOG_RING_SLOT_BYTES 256
 
 typedef enum {
     LOG_LEVEL_TRACE = 0,
@@ -35,8 +42,9 @@ typedef enum {
 #define LOG_PRINTF(fmtIndex, firstArg)
 #endif
 
-// Opens the session log and loads the threshold table. Exits on failure.
-void LogInit(const char *configPath, const char *logDir);
+// Opens the session log and loads the threshold table. bugDir is where
+// LogDumpBundle writes. Exits on failure.
+void LogInit(const char *configPath, const char *logDir, const char *bugDir);
 
 // Writes pending session bytes and checks the config for changes.
 // Call once per rendered frame.
@@ -44,6 +52,20 @@ void LogFlush(void);
 
 // Writes remaining bytes and closes the session log.
 void LogShutdown(void);
+
+// Registers the writer that appends the game half of a bundle state snapshot.
+typedef void (*LogSnapshotWriter)(FILE *out);
+void LogSetSnapshotWriter(LogSnapshotWriter writer);
+
+// Writes session.log, ring.log, state.txt, and env.txt under
+// <bugDir>/<UTC stamp>/. Reports failures to stderr and returns false.
+bool LogDumpBundle(const char *reason);
+
+// Path of the most recent bundle, or an empty string when none was written.
+const char *LogLastBundlePath(void);
+
+// Number of events currently in the ring, capped at LOG_RING_COUNT.
+uint32_t LogRingCount(void);
 
 // Context stamped on every line.
 void LogSetContext(uint64_t tick, uint32_t run);

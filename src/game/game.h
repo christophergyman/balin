@@ -1,6 +1,8 @@
 #ifndef GAME_H
 #define GAME_H
 
+#include <stdio.h>
+
 #include "game/ecs.h"
 
 void GameInit(void);
@@ -18,5 +20,10 @@ void GameProbeTick(void);
 // The single ECS world. Systems run against it, and GameTick flushes the
 // deferred destroys after the system list.
 EcsWorld *GameEcs(void);
+
+// Appends the game half of a bug bundle state snapshot: ECS counts, arena
+// bytes, and player state. Later systems add their own sections. Registered
+// by main.c as the logger snapshot writer.
+void GameWriteSnapshot(FILE *out);
 
 #endif

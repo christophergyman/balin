@@ -38,6 +38,13 @@ ctest --test-dir build/debug --output-on-failure
 
 `ctest` runs the assert-based test binary and the ADR-002 layer rule check.
 
+## Bug bundles
+
+Dev builds write a bug bundle when you press F9. Fatal errors write one
+automatically in every build. A bundle lands in `output/bugs/<timestamp>/` and
+contains `session.log`, `ring.log` (the last 2048 events at trace detail),
+`state.txt`, and `env.txt`.
+
 ## Layout
 
 - `src/main.c`: composition root. Owns the window, the loop, and wiring.

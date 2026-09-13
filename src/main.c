@@ -17,7 +17,7 @@
 // Frame-rate independent loop, per ADR-004. Simulation runs in fixed 1/60 s
 // ticks; rendering interpolates with the leftover accumulator fraction.
 int main(void) {
-    LogInit("assets/log.cfg", "output/logs");
+    LogInit("assets/log.cfg", "output/logs", "output/bugs");
     LOGI(LOG_CAT_BOOT, "Balin starting");
 
     GameMemoryInit();
@@ -25,6 +25,7 @@ int main(void) {
     InitWindow(WINDOW_W, WINDOW_H, "Balin");
 
     GameInit();
+    LogSetSnapshotWriter(GameWriteSnapshot);
 
     Clock clock;
     ClockInit(&clock);
@@ -32,6 +33,11 @@ int main(void) {
     while (!WindowShouldClose()) {
 #if BALIN_DEV
         OverlayHandleKeys();
+
+        // Dev-only for now. The fatal path still bundles in every build.
+        if (IsKeyPressed(KEY_F9)) {
+            LogDumpBundle("f9");
+        }
 #endif
 
         GameMemoryResetFrame();

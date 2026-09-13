@@ -1,8 +1,12 @@
 #include <assert.h>
+#include <dirent.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include "engine/arena.h"
 #include "engine/log.h"
@@ -34,7 +38,7 @@ static void TestLog(void) {
     mkdir("balin_test_tmp", 0755);
 
     WriteTextFile("balin_test_tmp/log.cfg", "# tests\ndefault = warn\n");
-    LogInit("balin_test_tmp/log.cfg", "balin_test_tmp/logs");
+    LogInit("balin_test_tmp/log.cfg", "balin_test_tmp/logs", "balin_test_tmp/bugs");
     LogSetContext(42, 3);
 
     LOGD(LOG_CAT_ENGINE, "hidden debug");
@@ -81,6 +85,171 @@ static void TestLog(void) {
     assert(strstr(error, "missing 'default'") != NULL);
 
     LogShutdown();
+}
+
+static void TestSnapshotWriter(FILE *out) {
+    fputs("test_marker=1\n", out);
+}
+
+static size_t MaxLineLength(const char *text) {
+    size_t longest = 0;
+    size_t current = 0;
+    for (const char *cursor = text; *cursor != '\0'; cursor++) {
+        if (*cursor == '\n') {
+            longest = (current > longest) ? current : longest;
+            current = 0;
+        } else {
+            current++;
+        }
+    }
+    return longest;
+}
+
+static int CountLines(const char *text) {
+    int lines = 0;
+    for (const char *cursor = text; *cursor != '\0'; cursor++) {
+        if (*cursor == '\n') {
+            lines++;
+        }
+    }
+    return lines;
+}
+
+static void TestLogRing(void) {
+    mkdir("balin_test_tmp", 0755);
+    WriteTextFile("balin_test_tmp/ring.cfg", "# tests\ndefault = warn\n");
+
+    // A fresh root per run avoids the same-second bundle cap and stale files.
+    char rootTemplate[] = "balin_test_tmp/ringbugs-XXXXXX";
+    char *root = mkdtemp(rootTemplate);
+    assert(root != NULL);
+
+    LogInit("balin_test_tmp/ring.cfg", "balin_test_tmp/ringlogs", root);
+    LogSetContext(7, 2);
+    LogSetSnapshotWriter(TestSnapshotWriter);
+
+    // Fill the ring and overflow it by one. The oldest event is evicted.
+    for (int index = 0; index < LOG_RING_COUNT + 1; index++) {
+        LOGT(LOG_CAT_ENGINE, "event-%d", index);
+    }
+    assert(LogRingCount() == LOG_RING_COUNT);
+
+    // A muted level still lands in the ring, even after it is full, per ADR-020.
+    LOGI(LOG_CAT_GAME, "late entry");
+
+    // A long event is truncated to the slot size.
+    char longText[400];
+    memset(longText, 'x', sizeof(longText) - 1);
+    longText[sizeof(longText) - 1] = '\0';
+    LOGT(LOG_CAT_ENGINE, "%s", longText);
+
+    // One visible event gives the session copy real content.
+    LOGW(LOG_CAT_GAME, "visible warn");
+
+    assert(LogDumpBundle("test"));
+
+    static char contents[512 * 1024 + 1024];
+    char path[512];
+
+    snprintf(path, sizeof(path), "%s/ring.log", LogLastBundlePath());
+    ReadTextFile(path, contents, sizeof(contents));
+    assert(CountLines(contents) == LOG_RING_COUNT);
+    assert(MaxLineLength(contents) <= LOG_RING_SLOT_BYTES - 1);
+    assert(strstr(contents, "msg=\"late entry\"") != NULL);
+    assert(strstr(contents, "level=info") != NULL);
+    assert(strstr(contents, "msg=\"event-0\"") == NULL);
+    assert(strstr(contents, "msg=\"event-2048\"") != NULL);
+
+    // The session copy matches the live session file.
+    char live[8192];
+    char copied[8192];
+    ReadTextFile(LogSessionPath(), live, sizeof(live));
+    snprintf(path, sizeof(path), "%s/session.log", LogLastBundlePath());
+    ReadTextFile(path, copied, sizeof(copied));
+    assert(strcmp(live, copied) == 0);
+    assert(strstr(copied, "msg=\"visible warn\"") != NULL);
+
+    // The state snapshot carries tick, run, reason, and the game section.
+    snprintf(path, sizeof(path), "%s/state.txt", LogLastBundlePath());
+    ReadTextFile(path, contents, sizeof(contents));
+    assert(strstr(contents, "tick=7") != NULL);
+    assert(strstr(contents, "run=2") != NULL);
+    assert(strstr(contents, "reason=test") != NULL);
+    assert(strstr(contents, "test_marker=1") != NULL);
+
+    snprintf(path, sizeof(path), "%s/env.txt", LogLastBundlePath());
+    ReadTextFile(path, contents, sizeof(contents));
+    assert(strstr(contents, "os=") != NULL);
+    assert(strstr(contents, "build=") != NULL);
+
+    LogShutdown();
+}
+
+static void TestLogAssertBundle(void) {
+    mkdir("balin_test_tmp", 0755);
+    WriteTextFile("balin_test_tmp/fatal.cfg", "# tests\ndefault = trace\n");
+
+    // A fresh root per run avoids stale bundles and PID reuse.
+    char rootTemplate[] = "balin_test_tmp/fatalbugs-XXXXXX";
+    char *root = mkdtemp(rootTemplate);
+    assert(root != NULL);
+
+    pid_t pid = fork();
+    assert(pid >= 0);
+
+    if (pid == 0) {
+        // Child: a failed ASSERT must write a bundle, then exit non-zero.
+        // The trace flood fills the session buffer, so the fatal line must
+        // force a flush to reach the copied session.log.
+        (void)freopen("/dev/null", "w", stdout);
+        LogInit("balin_test_tmp/fatal.cfg", "balin_test_tmp/fatallogs", root);
+        for (int index = 0; index < 1500; index++) {
+            LOGT(LOG_CAT_ENGINE, "filler-%d", index);
+        }
+        LOGI(LOG_CAT_BOOT, "before the failure");
+        ASSERT(false, LOG_CAT_ENGINE, "fatal test");
+        _exit(2); // Not reached when ASSERT dumps and exits.
+    }
+
+    int status = 0;
+    assert(waitpid(pid, &status, 0) == pid);
+    assert(WIFEXITED(status));
+    assert(WEXITSTATUS(status) == 1);
+
+    // Exactly one bundle directory, auto-written by the fatal path.
+    DIR *dir = opendir(root);
+    assert(dir != NULL);
+
+    char bundle[512] = "";
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_name[0] != '.') {
+            assert(bundle[0] == '\0');
+            snprintf(bundle, sizeof(bundle), "%s/%s", root, entry->d_name);
+        }
+    }
+    closedir(dir);
+    assert(bundle[0] != '\0');
+
+    // The ring dump can reach 512 KB, and the session copy is larger than the
+    // session buffer, so the read must cover both.
+    static char contents[512 * 1024 + 1024];
+    char path[512];
+    snprintf(path, sizeof(path), "%s/ring.log", bundle);
+    ReadTextFile(path, contents, sizeof(contents));
+    assert(strstr(contents, "level=fatal") != NULL);
+    assert(strstr(contents, "ASSERT failed") != NULL);
+    assert(strstr(contents, "msg=\"before the failure\"") != NULL);
+
+    // The fatal line survives a full session buffer.
+    snprintf(path, sizeof(path), "%s/session.log", bundle);
+    ReadTextFile(path, contents, sizeof(contents));
+    assert(strstr(contents, "level=fatal") != NULL);
+    assert(strstr(contents, "ASSERT failed") != NULL);
+
+    snprintf(path, sizeof(path), "%s/state.txt", bundle);
+    ReadTextFile(path, contents, sizeof(contents));
+    assert(strstr(contents, "reason=assert") != NULL);
 }
 
 static void TestArenaPushAndAlignment(void) {
@@ -529,6 +698,8 @@ static void TestEcsCounts(void) {
 int main(void) {
     TestScaffold();
     TestLog();
+    TestLogRing();
+    TestLogAssertBundle();
     TestArenaPushAndAlignment();
     TestArenaReset();
     TestGameMemory();

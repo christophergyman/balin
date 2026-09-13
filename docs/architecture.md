@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Draft v1.2 |
+| Status | Draft v1.3 |
 | Owner | cman |
 | Date | 2026-09-11 |
 | Scope | Engine and code architecture for the Balin demo |
@@ -809,7 +809,7 @@ Manifests and images reload when their modification times change in dev builds. 
 - **Categories.** A fixed enum: `boot`, `engine`, `input`, `render`, `audio`, `assets`, `game`, `ai`, `combat`, `editor`.
 - **Thresholds.** `assets/log.cfg` sets a default threshold and one threshold per category. It is re-read when its modification time changes, the same rule as tuning in ADR-008. A missing file or malformed line is fatal; the message goes to stderr because the logger is not configured yet.
 - **Sinks.** The console writes enabled lines; `warn` and above go to stderr. A session log is written under `output/logs/` and flushed with a per-frame byte budget, so a burst cannot stall a frame.
-- **Formatting.** One static buffer formats a line at a time. The call site checks the threshold first, so a disabled level does no formatting. Nothing allocates, ever.
+- **Formatting.** One static buffer formats a line at a time. Every event is formatted once and copied to the ring. The threshold then gates the console and session file only, so a disabled level costs format time but no I/O. Nothing allocates, ever.
 - **Flight recorder.** A fixed ring keeps the last 2048 events at `trace` detail, independent of thresholds. Each slot holds up to 256 bytes. The ring is a static array.
 - **Bug bundle.** F9 writes a bundle folder under `output/bugs/<timestamp>/` with `session.log`, `ring.log`, `state.txt`, and `env.txt`. A fatal event writes the same bundle before exit in every build.
 - **Snapshot.** `state.txt` starts with ECS counts, arena bytes, tick, run, and player and AI state. Later systems append sections of their own.
@@ -823,7 +823,7 @@ Manifests and images reload when their modification times change in dev builds. 
 - Negative: a malformed `log.cfg` stops the game, by ADR-019.
 - Negative: the ring reserves 2048 fixed slots even in a quiet session.
 
-**Confirmation.** Tests for the logfmt shape and for a malformed `log.cfg`. A test that a disabled level does no formatting. A manual check that a threshold edit applies while the game runs and that F9 writes a complete bundle. ADR-015 carries a supersession note.
+**Confirmation.** Tests for the logfmt shape and for a malformed `log.cfg`. A test that a disabled level writes nothing to the console or session log while the ring still records it. A manual check that a threshold edit applies while the game runs and that F9 writes a complete bundle. ADR-015 carries a supersession note.
 
 ### ADR-021: Per-entity component masks in the ECS
 
@@ -902,3 +902,4 @@ Items not yet decided or deliberately deferred. Each can become an ADR when it i
 | 2026-09-11 | v1.0 draft. ADR-001 through ADR-019 recorded from the architecture interview. |
 | 2026-09-11 | v1.1. ADR-020 recorded. Logging part of ADR-015 superseded. |
 | 2026-09-12 | v1.2. ADR-021 recorded. Mask layout of ADR-005 superseded. |
+| 2026-09-13 | v1.3. ADR-020 ring capture clarified: every event is formatted and ringed; thresholds gate the console and session file only. |
